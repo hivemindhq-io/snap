@@ -5,6 +5,7 @@ import {
   Section,
   Bold,
   Value,
+  Link,
 } from '@metamask/snaps-sdk/jsx';
 import { OriginType, PropsForOriginType } from '../types';
 import { stringToDecimal } from '../util';
@@ -16,6 +17,7 @@ import {
 } from '../distribution';
 import { TrustedCircleSection } from './TrustedCircle';
 import { UserPositionSection } from './UserPosition';
+import { vendor } from '../vendors';
 
 /**
  * Section header for the dApp origin.
@@ -85,12 +87,17 @@ export const NoOrigin = (
 
 /**
  * Origin display when the origin URL has no atom on Intuition.
- * Shows a warning that the dApp is unknown to the community.
+ * Shows a warning that the dApp is unknown to the community,
+ * with an inline CTA to add trust data.
  */
 export const OriginNoAtom = (
   params: PropsForOriginType<OriginType.NoAtom>,
 ) => {
-  const { hostname } = params;
+  const { hostname, originUrl } = params;
+
+  // Generate URL for adding this dApp to the knowledge graph
+  const hasOriginUrl = hostname || originUrl;
+  const addDappUrl = hasOriginUrl ? vendor.originNoAtom(params).url : null;
 
   return (
     <Section>
@@ -102,18 +109,27 @@ export const OriginNoAtom = (
         <Text color="warning"><Bold>Unknown dApp</Bold></Text>
       </Row>
       <Text color="default">No community data. Proceed with caution.</Text>
+      {addDappUrl && (
+        <Text>
+          <Link href={addDappUrl}>Be first to add trust data for this dApp ↗</Link>
+        </Text>
+      )}
     </Section>
   );
 };
 
 /**
  * Origin display when atom exists but no trust triple.
- * The dApp is known but hasn't been rated for trustworthiness.
+ * The dApp is known but hasn't been rated for trustworthiness,
+ * with an inline CTA to create the trust triple.
  */
 export const OriginAtomWithoutTrustTriple = (
   params: PropsForOriginType<OriginType.AtomWithoutTrustTriple>,
 ) => {
   const { hostname, origin } = params;
+
+  // Generate URL for creating trust triple for this dApp
+  const voteUrl = vendor.originAtomWithoutTrustTriple(params).url;
 
   return (
     <Section>
@@ -124,7 +140,10 @@ export const OriginAtomWithoutTrustTriple = (
       <Row label="Status">
         <Text color="default">No trust rating yet</Text>
       </Row>
-      <Text color="default">Known dApp, awaiting community votes</Text>
+      <Text color="default">Known dApp, awaiting community votes.</Text>
+      <Text>
+        <Link href={voteUrl}>Be first to vote on this dApp ↗</Link>
+      </Text>
     </Section>
   );
 };
@@ -206,6 +225,9 @@ export const OriginAtomWithTrustTriple = (
           againstContacts={trustedCircle.againstContacts}
         />
       ) : null}
+      <Text>
+        <Link href={vendor.originAtomWithTrustTriple(params).url}>Vote on this dApp ↗</Link>
+      </Text>
     </Section>
   );
 };
