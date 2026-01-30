@@ -537,10 +537,10 @@ export function determineTrustLevel(
 
   const trustRatio = (supportMarketCap / total) * 100;
 
-  if (trustRatio >= 70) {
+  if (trustRatio >= 90) {
     return { level: 'trusted', ratio: trustRatio };
   }
-  if (trustRatio >= 30) {
+  if (trustRatio >= 70) {
     return { level: 'mixed', ratio: trustRatio };
   }
   return { level: 'untrusted', ratio: trustRatio };
