@@ -28,7 +28,7 @@ const VENDOR_NAME = 'Hive Mind Explorer';
 
 const EXPLORER_ORIGINS: Record<number, string> = {
   // Intuition Mainnet
-  1155: 'https://explorer.hivemindhq.io',
+  1155: 'https://beta.explorer.hivemindhq.io',
   // Intuition Testnet
   13579: 'https://testnet.explorer.hivemindhq.io',
 };
