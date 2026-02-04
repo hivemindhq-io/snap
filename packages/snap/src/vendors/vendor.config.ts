@@ -108,89 +108,90 @@ export type VendorConfig = {
 export const vendorConfig: VendorConfig = {
   name: VENDOR_NAME,
 
+  // ─────────────────────────────────────────────────────────────────────────
+  // Address URL Builders
+  //
+  // These use semantic address routes: /address/{address}?action={action}
+  //
+  // The Explorer handles all state detection and adapts the flow accordingly:
+  // - No atom: Modal creates atom + trust triple in one flow
+  // - Atom, no triple: Modal creates trust triple
+  // - Triple exists: Modal goes directly to staking
+  // ─────────────────────────────────────────────────────────────────────────
+
   /**
    * No atom exists for this address.
-   * Link to create an atom + trust triple.
+   * Link to address page with ?action=trust to open create claim modal.
    *
-   * Slim API: Only send address + chain_id.
-   * Explorer derives hasTagAtomId + trustworthyAtomId from its config.
+   * The Explorer will:
+   * 1. Detect no atom exists
+   * 2. Open CreateClaimModal with subjectData (address)
+   * 3. Modal creates atom + trust triple in one flow
    */
   noAtom: (params) => {
-    const { address, chainId, isContract } = params;
-    const addressToUse = isContract ? addressToCaip10(address, chainId) : address;
+    const { address } = params;
 
-    const url = new URL('/snap/action', baseUrl);
-    url.searchParams.set('intent', 'complete_trust_triple');
-    url.searchParams.set('address', addressToUse);
-    url.searchParams.set('chain_id', chainId);
+    const url = new URL(`/address/${address}`, baseUrl);
+    url.searchParams.set('action', 'trust');
 
     return { url: url.toString() };
   },
 
   /**
    * Atom exists but no trust triple.
-   * Link to create the trust triple.
+   * Link to address page with ?action=trust.
    *
-   * Slim API: Only send atom_id.
-   * Explorer derives hasTagAtomId + trustworthyAtomId from its config.
+   * The Explorer will:
+   * 1. Detect atom exists but no trust triple
+   * 2. Open CreateClaimModal with preselectedType='trust'
+   * 3. Modal creates trust triple
    */
   atomWithoutTrustTriple: (params) => {
-    const { account } = params;
-    if (!account) throw new Error('atomWithoutTrustTriple: account not found');
+    const { address } = params;
 
-    const { term_id: atomId } = account;
-
-    const url = new URL('/snap/action', baseUrl);
-    url.searchParams.set('intent', 'create_trust_triple');
-    url.searchParams.set('atom_id', atomId);
+    const url = new URL(`/address/${address}`, baseUrl);
+    url.searchParams.set('action', 'trust');
 
     return { url: url.toString() };
   },
 
   /**
    * Trust triple exists.
-   * Link to stake on it.
+   * Link to address page with ?action=trust.
    *
-   * Slim API: Only send triple_id.
-   * User will stake on the triple page.
+   * The Explorer will:
+   * 1. Detect trust triple exists
+   * 2. Open CreateClaimModal with existingTripleId
+   * 3. User goes directly to staking step
    */
   atomWithTrustTriple: (params) => {
-    const { triple } = params;
-    if (!triple) throw new Error('atomWithTrustTriple: triple not found');
+    const { address } = params;
 
-    const { term_id: tripleId } = triple;
-
-    const url = new URL('/snap/action', baseUrl);
-    url.searchParams.set('intent', 'stake_trust_triple');
-    url.searchParams.set('triple_id', tripleId);
+    const url = new URL(`/address/${address}`, baseUrl);
+    url.searchParams.set('action', 'trust');
 
     return { url: url.toString() };
   },
 
   /**
-   * View atom details page.
+   * View address details page.
+   * Uses semantic address route for consistency.
    */
   viewAtom: (params) => {
-    const { account } = params;
-    if (!account) throw new Error('viewAtom: account not found');
+    const { address } = params;
 
-    const { term_id: atomId } = account;
-
-    return { url: new URL(`/atoms/${atomId}`, baseUrl).toString() };
+    return { url: new URL(`/address/${address}`, baseUrl).toString() };
   },
 
   /**
-   * Create an alias for an atom.
+   * Create an alias for an address.
+   * Link to address page with ?action=alias.
    */
   createAlias: (params) => {
-    const { account } = params;
-    if (!account) throw new Error('createAlias: account not found');
+    const { address } = params;
 
-    const { term_id: atomId } = account;
-
-    const url = new URL('/snap/action', baseUrl);
-    url.searchParams.set('intent', 'create_alias');
-    url.searchParams.set('subject_id', atomId);
+    const url = new URL(`/address/${address}`, baseUrl);
+    url.searchParams.set('action', 'alias');
 
     return { url: url.toString() };
   },
@@ -303,3 +304,5 @@ export const vendorConfig: VendorConfig = {
 
 export default vendorConfig;
 
+// https://beta.explorer.hivemindhq.io/snap/action?intent=complete_trust_triple&address=0x7ef8a5469e15a78e325f8e14e7a5233e455fceae&chain_id=eip155%3A1155
+// no atom = https://beta.explorer.hivemindhq.io/snap/action?intent=complete_trust_triple&address=0x7ef8a5469e15a78e325f8e14e7a5233e455fceae&chain_id=eip155%3A1155
