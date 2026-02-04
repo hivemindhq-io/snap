@@ -33,8 +33,9 @@ const EXPLORER_ORIGINS: Record<number, string> = {
   13579: 'https://testnet.explorer.hivemindhq.io',
 };
 
-// Get the base URL for the current chain
-const baseUrl = EXPLORER_ORIGINS[chainConfig.chainId];
+// Get the base URL for the current chain (fallback to mainnet if chain not configured)
+const FALLBACK_URL = 'https://beta.explorer.hivemindhq.io';
+const baseUrl: string = EXPLORER_ORIGINS[chainConfig.chainId] ?? FALLBACK_URL;
 
 /* ═══════════════════════════════════════════════════════════════════════════
  * TYPE DEFINITIONS
@@ -196,70 +197,107 @@ export const vendorConfig: VendorConfig = {
 
   // ─────────────────────────────────────────────────────────────────────────
   // dApp Origin URL Builders
+  //
+  // These use semantic domain routes: /domain/{hostname}?action={action}
+  //
+  // IMPORTANT: We link to the specific hostname (e.g., "app.uniswap.org")
+  // NOT the root domain (e.g., "uniswap.org"). This ensures:
+  // - Users vote on the specific dApp they're experiencing
+  // - Subdomain-level granularity for trust signals
+  // - Shared hosting domains (github.io) are handled correctly
+  //
+  // The Explorer handles all state detection and adapts the flow accordingly.
   // ─────────────────────────────────────────────────────────────────────────
 
   /**
    * No atom exists for this origin URL (unknown dApp).
-   * Link to create an atom + trust triple for the dApp.
+   * Link to domain page with ?action=trust to open create claim modal.
    *
-   * Uses the hostname/originUrl to create the atom.
+   * Uses hostname (e.g., "app.uniswap.org") not normalized domain.
+   * This ensures subdomain-level precision for trust signals.
+   *
+   * The Explorer will:
+   * 1. Detect no atom exists
+   * 2. Open CreateClaimModal with subjectData (hostname)
+   * 3. Modal creates atom + trust triple in one flow
    */
   originNoAtom: (params) => {
-    const { originUrl, hostname } = params;
-    // Use hostname if available, fall back to originUrl
-    const urlToUse = hostname || originUrl || '';
+    const { hostname } = params;
 
-    const url = new URL('/snap/action', baseUrl);
-    url.searchParams.set('intent', 'complete_trust_triple');
-    url.searchParams.set('origin_url', urlToUse);
+    // Fallback to base URL if no hostname available
+    if (!hostname) {
+      return { url: baseUrl };
+    }
+
+    const url = new URL(`/domain/${encodeURIComponent(hostname)}`, baseUrl);
+    url.searchParams.set('action', 'trust');
 
     return { url: url.toString() };
   },
 
   /**
    * Origin atom exists but no trust triple.
-   * Link to create the trust triple for the dApp.
+   * Link to domain page with ?action=trust.
+   *
+   * Uses hostname for consistency with subdomain-level precision.
+   *
+   * The Explorer will:
+   * 1. Detect atom exists but no trust triple
+   * 2. Open CreateClaimModal with preselectedType='trust'
+   * 3. Modal creates trust triple
    */
   originAtomWithoutTrustTriple: (params) => {
-    const { origin } = params;
-    if (!origin) throw new Error('originAtomWithoutTrustTriple: origin not found');
+    const { hostname, origin } = params;
 
-    const { term_id: atomId } = origin;
+    // Prefer hostname (what the user is actually visiting)
+    // Fall back to origin atom's data if hostname not available
+    const domainToUse = hostname || origin?.data || origin?.label;
+    if (!domainToUse) throw new Error('originAtomWithoutTrustTriple: no hostname or origin data');
 
-    const url = new URL('/snap/action', baseUrl);
-    url.searchParams.set('intent', 'create_trust_triple');
-    url.searchParams.set('atom_id', atomId);
+    const url = new URL(`/domain/${encodeURIComponent(domainToUse)}`, baseUrl);
+    url.searchParams.set('action', 'trust');
 
     return { url: url.toString() };
   },
 
   /**
    * Origin trust triple exists.
-   * Link to stake on the dApp's trust triple.
+   * Link to domain page with ?action=trust.
+   *
+   * Uses hostname for consistency with subdomain-level precision.
+   *
+   * The Explorer will:
+   * 1. Detect trust triple exists
+   * 2. Open CreateClaimModal with existingTripleId
+   * 3. User goes directly to staking step
    */
   originAtomWithTrustTriple: (params) => {
-    const { triple } = params;
-    if (!triple) throw new Error('originAtomWithTrustTriple: triple not found');
+    const { hostname, origin } = params;
 
-    const { term_id: tripleId } = triple;
+    // Prefer hostname (what the user is actually visiting)
+    // Fall back to origin atom's data if hostname not available
+    const domainToUse = hostname || origin?.data || origin?.label;
+    if (!domainToUse) throw new Error('originAtomWithTrustTriple: no hostname or origin data');
 
-    const url = new URL('/snap/action', baseUrl);
-    url.searchParams.set('intent', 'stake_trust_triple');
-    url.searchParams.set('triple_id', tripleId);
+    const url = new URL(`/domain/${encodeURIComponent(domainToUse)}`, baseUrl);
+    url.searchParams.set('action', 'trust');
 
     return { url: url.toString() };
   },
 
   /**
    * View origin atom details page.
+   * Uses hostname for subdomain-level precision.
    */
   viewOriginAtom: (params) => {
-    const { origin } = params;
-    if (!origin) throw new Error('viewOriginAtom: origin not found');
+    const { hostname, origin } = params;
 
-    const { term_id: atomId } = origin;
+    // Prefer hostname (what the user is actually visiting)
+    // Fall back to origin atom's data if hostname not available
+    const domainToUse = hostname || origin?.data || origin?.label;
+    if (!domainToUse) throw new Error('viewOriginAtom: no hostname or origin data');
 
-    return { url: new URL(`/atoms/${atomId}`, baseUrl).toString() };
+    return { url: new URL(`/domain/${encodeURIComponent(domainToUse)}`, baseUrl).toString() };
   },
 };
 

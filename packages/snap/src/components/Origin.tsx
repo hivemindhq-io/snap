@@ -194,13 +194,21 @@ export const OriginAtomWithTrustTriple = (
       <Row label="From">
         <Text><Bold>{hostname || origin?.label || 'Unknown'}</Bold></Text>
       </Row>
-      {/* User's own position - displayed first as the strongest signal */}
+      {/* Layer 1: User's own position - displayed first as the strongest signal */}
       {hasUserPosition && (
         <UserPositionSection
           userPosition={user_position ?? []}
           userCounterPosition={user_counter_position ?? []}
         />
       )}
+      {/* Layer 2: Trust Circle - social proof from people you trust */}
+      {trustedCircle ? (
+        <TrustedCircleSection
+          forContacts={trustedCircle.forContacts}
+          againstContacts={trustedCircle.againstContacts}
+        />
+      ) : null}
+      {/* Layer 3: Community context - aggregate metrics */}
       <Row label="Community">
         <Text color={color}><Bold>{badge}</Bold></Text>
       </Row>
@@ -219,12 +227,6 @@ export const OriginAtomWithTrustTriple = (
           extra=""
         />
       </Row>
-      {trustedCircle ? (
-        <TrustedCircleSection
-          forContacts={trustedCircle.forContacts}
-          againstContacts={trustedCircle.againstContacts}
-        />
-      ) : null}
       <Text>
         <Link href={vendor.originAtomWithTrustTriple(params).url}>Vote on this dApp ↗</Link>
       </Text>

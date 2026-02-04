@@ -6,13 +6,14 @@ import { FooterLink } from '../../Footer/FooterLink';
  * CTA to view more details about the dApp origin on the vendor site.
  *
  * Renders when origin atom exists.
- * Returns null when: NoOrigin or NoAtom (nothing to view)
+ * Returns null when: NoOrigin, NoAtom (nothing to view), or MetaMask origin
  */
 export const OriginViewMore = (props: OriginProps) => {
-  // Self-gate: only render when origin atom exists
+  // Self-gate: only render when origin atom exists and is not MetaMask
   if (
     props.originType === OriginType.NoOrigin ||
-    props.originType === OriginType.NoAtom
+    props.originType === OriginType.NoAtom ||
+    props.originUrl === 'metamask'
   ) {
     return null;
   }

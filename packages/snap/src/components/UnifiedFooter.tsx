@@ -28,9 +28,11 @@ export const UnifiedFooter = ({
   originProps: OriginProps;
 }) => {
   // Check if origin has an atom (known dApp) for "View more" link
+  // Exclude 'metamask' origin - we don't want to link out to Explorer for MetaMask itself
   const hasOriginAtom =
-    originProps.originType === OriginType.AtomWithoutTrustTriple ||
-    originProps.originType === OriginType.AtomWithTrustTriple;
+    originProps.originUrl !== 'metamask' &&
+    (originProps.originType === OriginType.AtomWithoutTrustTriple ||
+     originProps.originType === OriginType.AtomWithTrustTriple);
 
   return (
     <Box>

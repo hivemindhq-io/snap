@@ -222,13 +222,21 @@ export const AtomWithTrustTriple = (
           <Text><Bold>{alias}</Bold></Text>
         </Row>
       )}
-      {/* User's own position - displayed first as the strongest signal */}
+      {/* Layer 1: User's own position - displayed first as the strongest signal */}
       {hasUserPosition && (
         <UserPositionSection
           userPosition={user_position ?? []}
           userCounterPosition={user_counter_position ?? []}
         />
       )}
+      {/* Layer 2: Trust Circle - social proof from people you trust */}
+      {trustedCircle ? (
+        <TrustedCircleSection
+          forContacts={trustedCircle.forContacts}
+          againstContacts={trustedCircle.againstContacts}
+        />
+      ) : null}
+      {/* Layer 3: Community context - aggregate metrics */}
       <Row label="Community">
         <Text color={color}><Bold>{badge}</Bold></Text>
       </Row>
@@ -251,12 +259,6 @@ export const AtomWithTrustTriple = (
         alternateTrustData={alternateTrustData}
         isContract={isContract}
       />
-      {trustedCircle ? (
-        <TrustedCircleSection
-          forContacts={trustedCircle.forContacts}
-          againstContacts={trustedCircle.againstContacts}
-        />
-      ) : null}
     </Section>
   );
 };

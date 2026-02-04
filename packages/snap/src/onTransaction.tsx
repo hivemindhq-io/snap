@@ -50,6 +50,8 @@ export const onTransaction: OnTransactionHandler = async ({
   chainId: ChainId;
   transactionOrigin?: string;
 }) => {
+
+  console.log('transactionOrigin', transactionOrigin);
   // "to" ENS addresses arrive here as EVM addresses, EVM addresses arrive as EVM addresses
   const userAddress: string | undefined = transaction.from;
 
