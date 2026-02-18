@@ -9,12 +9,31 @@ import {
 } from '@metamask/snaps-sdk/jsx';
 import { OriginType, PropsForOriginType } from '../types';
 import { stringToDecimal } from '../util';
+import { chainConfig } from '../config';
 import { TrustedCircleSection } from './TrustedCircle';
 import { UserPositionSection } from './UserPosition';
 import { vendor } from '../vendors';
 
 const MIN_STAKERS_FOR_CONFIDENCE = 3;
 const TOP_STAKER_CONCERN_THRESHOLD = 25;
+
+/**
+ * Formats a native-unit market cap value for display with locale separators.
+ *
+ * @param value - Market cap in native units (already divided by 10^18)
+ * @returns Formatted string like "49,375.12 TRUST"
+ */
+const formatMarketCap = (value: number): string => {
+  const integerPart = Math.floor(value);
+  const fractionalPart = Math.round((value - integerPart) * 100);
+
+  const integerStr = integerPart.toLocaleString();
+  const formatted = fractionalPart > 0
+    ? `${integerStr}.${fractionalPart.toString().padStart(2, '0')}`
+    : integerStr;
+
+  return `${formatted} ${chainConfig.currencySymbol}`;
+};
 
 /**
  * Section header for the dApp origin.
@@ -235,6 +254,11 @@ export const OriginAtomWithTrustTriple = (
               </Text>
             </Row>
           )}
+          <Row label="Total staked">
+            <Text>
+              <Bold>{formatMarketCap(total)}</Bold>
+            </Text>
+          </Row>
           <Row label="Stakers">
             <Text>
               <Bold>{`${forCount} FOR · ${againstCount} AGAINST`}</Bold>
