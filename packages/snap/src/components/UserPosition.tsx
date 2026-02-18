@@ -24,14 +24,13 @@ function formatShares(shares: string): string {
   const decimals = chainConfig.decimalPrecision;
   const divisor = BigInt(10 ** decimals);
 
-  // Integer part
   const integerPart = sharesNum / divisor;
-  // Fractional part (2 decimal places)
   const fractionalPart = (sharesNum % divisor) * 100n / divisor;
 
+  const integerStr = Number(integerPart).toLocaleString();
   const formatted = fractionalPart > 0
-    ? `${integerPart}.${fractionalPart.toString().padStart(2, '0')}`
-    : integerPart.toString();
+    ? `${integerStr}.${fractionalPart.toString().padStart(2, '0')}`
+    : integerStr;
 
   return `${formatted} ${chainConfig.currencySymbol}`;
 }
