@@ -28,13 +28,13 @@ const VENDOR_NAME = 'Hive Mind Explorer';
 
 const EXPLORER_ORIGINS: Record<number, string> = {
   // Intuition Mainnet
-  1155: 'https://beta.explorer.hivemindhq.io',
+  1155: 'https://preview.explorer.hivemindhq.io',
   // Intuition Testnet
   13579: 'https://testnet.explorer.hivemindhq.io',
 };
 
 // Get the base URL for the current chain (fallback to mainnet if chain not configured)
-const FALLBACK_URL = 'https://beta.explorer.hivemindhq.io';
+const FALLBACK_URL = 'https://preview.explorer.hivemindhq.io';
 const baseUrl: string = EXPLORER_ORIGINS[chainConfig.chainId] ?? FALLBACK_URL;
 
 /* ═══════════════════════════════════════════════════════════════════════════

@@ -1,5 +1,5 @@
-import { Box, Divider } from '@metamask/snaps-sdk/jsx';
-import { AccountProps, OriginProps, OriginType } from '../types';
+import { Box, Divider, Button } from '@metamask/snaps-sdk/jsx';
+import { AccountProps, AccountType, OriginProps, OriginType } from '../types';
 import { CreateTrustTriple } from './Footer/actions/CreateTrustTriple';
 import { StakePrompt } from './Footer/actions/StakePrompt';
 import { CreateAlias } from './Footer/actions/CreateAlias';
@@ -34,6 +34,16 @@ export const UnifiedFooter = ({
     (originProps.originType === OriginType.AtomWithoutTrustTriple ||
      originProps.originType === OriginType.AtomWithTrustTriple);
 
+  const MIN_POSITIONS_FOR_AI_SUMMARY = 3;
+
+  const showAISummary =
+    accountProps.accountType === AccountType.AtomWithTrustTriple &&
+    (() => {
+      const forCount = accountProps.triple?.term?.vaults?.[0]?.position_count ?? 0;
+      const againstCount = accountProps.triple?.counter_term?.vaults?.[0]?.position_count ?? 0;
+      return forCount + againstCount >= MIN_POSITIONS_FOR_AI_SUMMARY;
+    })();
+
   return (
     <Box>
       <Divider />
@@ -58,6 +68,15 @@ export const UnifiedFooter = ({
          * Origin CTAs - Only "View more" (voting CTAs are inline in Origin section)
          * ───────────────────────────────────────────────────────────────── */}
         {hasOriginAtom && <OriginViewMore {...originProps} />}
+
+        {/* ─────────────────────────────────────────────────────────────────
+         * AI Summary - Only shown when there's enough community activity
+         * for the AI to synthesize beyond what raw numbers already convey.
+         * Requires a trust triple with 3+ total positions (FOR + AGAINST).
+         * ───────────────────────────────────────────────────────────────── */}
+        {showAISummary && (
+          <Button name="ai_summary">AI Summary</Button>
+        )}
       </Box>
     </Box>
   );
