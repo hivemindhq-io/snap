@@ -241,7 +241,7 @@ export const OriginAtomWithTrustTriple = (
             </Text>
           </Row>
           {trustSummary ? (
-            <Text color="muted">{trustSummary}</Text>
+            <Text color="alternative">{trustSummary}</Text>
           ) : null}
         </Box>
       ) : (
