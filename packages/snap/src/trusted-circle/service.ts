@@ -136,17 +136,21 @@ interface PositionWithAccount {
 /**
  * Filters positions to only include trusted contacts.
  * Cross-references the user's trusted circle with positions on a triple.
+ * Excludes the user's own address since their position is shown separately.
  *
  * @param trustedCircle - The user's trusted contacts
  * @param forPositions - Positions staking FOR
  * @param againstPositions - Positions staking AGAINST
+ * @param userAddress - The current user's address to exclude from results
  * @returns Trusted contacts with their stance (FOR/AGAINST)
  */
 export function getTrustedContactsWithPositions(
   trustedCircle: TrustedContact[],
   forPositions: PositionWithAccount[],
   againstPositions: PositionWithAccount[],
+  userAddress?: string,
 ): TrustedCirclePositions {
+  const normalizedUserAddress = userAddress?.toLowerCase();
 
   // Create a Set for O(1) lookup of trusted account IDs
   const trustedIds = new Set(
@@ -158,10 +162,11 @@ export function getTrustedContactsWithPositions(
     trustedCircle.map((c) => [c.accountId.toLowerCase(), c.label]),
   );
 
-  // Filter FOR positions to trusted contacts
+  // Filter FOR positions to trusted contacts, excluding the user's own position
   const forContacts: TrustedContact[] = [];
   for (const position of forPositions) {
     const accountId = position.account_id?.toLowerCase();
+    if (accountId === normalizedUserAddress) continue;
     const isTrusted = accountId && trustedIds.has(accountId);
     if (isTrusted) {
       forContacts.push({
@@ -175,10 +180,11 @@ export function getTrustedContactsWithPositions(
     }
   }
 
-  // Filter AGAINST positions to trusted contacts
+  // Filter AGAINST positions to trusted contacts, excluding the user's own position
   const againstContacts: TrustedContact[] = [];
   for (const position of againstPositions) {
     const accountId = position.account_id?.toLowerCase();
+    if (accountId === normalizedUserAddress) continue;
     const isTrusted = accountId && trustedIds.has(accountId);
     if (isTrusted) {
       againstContacts.push({

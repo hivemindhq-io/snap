@@ -74,6 +74,7 @@ export const onTransaction: OnTransactionHandler = async ({
       trustedCircle,
       positions,
       counterPositions,
+      userAddress,
     );
     // Only include if there are contacts with positions
     if (
@@ -96,6 +97,7 @@ export const onTransaction: OnTransactionHandler = async ({
       trustedCircle,
       positions,
       counterPositions,
+      userAddress,
     );
     // Only include if there are contacts with positions
     if (
