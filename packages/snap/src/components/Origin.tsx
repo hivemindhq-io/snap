@@ -1,23 +1,20 @@
 import {
+  Box,
   Row,
   Text,
   Heading,
   Section,
   Bold,
-  Value,
   Link,
 } from '@metamask/snaps-sdk/jsx';
 import { OriginType, PropsForOriginType } from '../types';
 import { stringToDecimal } from '../util';
-import { chainConfig } from '../config';
-import {
-  analyzeTrustDistribution,
-  TrustDistributionAnalysis,
-  SnapColor,
-} from '../distribution';
 import { TrustedCircleSection } from './TrustedCircle';
 import { UserPositionSection } from './UserPosition';
 import { vendor } from '../vendors';
+
+const MIN_STAKERS_FOR_CONFIDENCE = 3;
+const TOP_STAKER_CONCERN_THRESHOLD = 25;
 
 /**
  * Section header for the dApp origin.
@@ -27,50 +24,68 @@ const OriginHeader = () => (
 );
 
 /**
- * Returns a trust badge string and color based on trust ratio.
+ * Returns an emoji icon based purely on the trustworthy percentage.
  */
-const getTrustInfo = (
-  supportMarketCap: number,
-  opposeMarketCap: number,
-): { badge: string; color: 'success' | 'warning' | 'muted' } => {
-  const total = supportMarketCap + opposeMarketCap;
-  if (total === 0) return { badge: 'No Stakes', color: 'muted' };
-
-  const trustRatio = (supportMarketCap / total) * 100;
-  if (trustRatio >= 70) return { badge: 'Trusted', color: 'success' };
-  if (trustRatio >= 30) return { badge: 'Mixed', color: 'warning' };
-  return { badge: 'Untrusted', color: 'warning' };
+const getTrustworthyIcon = (trustPercent: number): string => {
+  if (trustPercent >= 90) return '🟢';
+  if (trustPercent >= 70) return '🟡';
+  return '🔴';
 };
 
 /**
- * Converts position data to shares array for distribution analysis.
+ * Returns an emoji icon for the "Top staker" concentration percentage.
+ */
+const getTopStakerIcon = (topStakerPercent: number): string => {
+  if (topStakerPercent >= TOP_STAKER_CONCERN_THRESHOLD) return '🟡';
+  return '';
+};
+
+/**
+ * Generates an advisory summary sentence when trust data has concerns.
+ * Returns null when all signals are healthy (silence = green light).
+ *
+ * Concerns: disputed (< 90%), sparse (< MIN_STAKERS_FOR_CONFIDENCE), concentrated (>= 25% top staker)
+ */
+const getTrustSummary = (
+  trustPercent: number,
+  totalStakers: number,
+  topStakerPercent: number,
+): string | null => {
+  const isDisputed = trustPercent < 90;
+  const isSparse = totalStakers < MIN_STAKERS_FOR_CONFIDENCE;
+  const isConcentrated = topStakerPercent >= TOP_STAKER_CONCERN_THRESHOLD;
+
+  if (!isDisputed && !isSparse && !isConcentrated) return null;
+
+  if (isDisputed && isSparse && isConcentrated) return 'Disputed, limited, and concentrated';
+  if (isDisputed && isSparse) return 'Disputed with limited data';
+  if (isDisputed && isConcentrated) return 'Disputed and dominated by one staker';
+  if (isSparse && isConcentrated) return 'Limited data, dominated by one staker';
+  if (isDisputed) return 'Trustworthiness is actively disputed';
+  if (isSparse) return 'Limited trust data available';
+  if (isConcentrated) return 'Trust signal dominated by one staker';
+
+  return null;
+};
+
+/**
+ * Converts position data to shares array for top-staker analysis.
  */
 const positionsToShares = (
   positions: { shares: string }[],
-): { shares: number }[] => {
-  return positions.map((p) => ({
-    shares: parseFloat(p.shares) || 0,
-  }));
+): number[] => {
+  return positions.map((p) => parseFloat(p.shares) || 0).filter((s) => s > 0);
 };
 
 /**
- * Returns distribution indicator label.
+ * Calculates the percentage held by the single largest position.
  */
-const getDistributionLabel = (
-  analysis: TrustDistributionAnalysis,
-): { label: string; color: SnapColor } => {
-  const { forDistribution } = analysis;
-
-  // Ensure color is valid (fallback to 'default' if somehow invalid)
-  const validColors: SnapColor[] = ['success', 'warning', 'muted', 'default'];
-  const color: SnapColor = validColors.includes(forDistribution.snapColor as SnapColor)
-    ? forDistribution.snapColor
-    : 'default';
-
-  return {
-    label: forDistribution.shortLabel,
-    color,
-  };
+const calculateTop1Percent = (shares: number[]): number => {
+  if (shares.length === 0) return 0;
+  const total = shares.reduce((sum, v) => sum + v, 0);
+  if (total === 0) return 0;
+  const max = Math.max(...shares);
+  return (max / total) * 100;
 };
 
 /**
@@ -109,11 +124,11 @@ export const OriginNoAtom = (
         <Text color="warning"><Bold>Unknown dApp</Bold></Text>
       </Row>
       <Text color="default">No community data. Proceed with caution.</Text>
-      {addDappUrl && (
+      {addDappUrl ? (
         <Text>
           <Link href={addDappUrl}>Be first to add trust data for this dApp ↗</Link>
         </Text>
-      )}
+      ) : null}
     </Section>
   );
 };
@@ -150,8 +165,7 @@ export const OriginAtomWithoutTrustTriple = (
 
 /**
  * Origin display when atom and trust triple both exist.
- * Shows full trust data with support/oppose market caps, trust badge,
- * and distribution indicator.
+ * Shows Trustworthy %, top staker %, and staker counts.
  */
 export const OriginAtomWithTrustTriple = (
   params: PropsForOriginType<OriginType.AtomWithTrustTriple>,
@@ -166,25 +180,26 @@ export const OriginAtomWithTrustTriple = (
   const opposeMarketCap = counterVault?.market_cap || '0';
   const opposeMarketCapNative = stringToDecimal(opposeMarketCap, 18);
 
-  const supportCount = triple.positions?.length || 0;
-  const opposeCount = triple.counter_positions?.length || 0;
+  const forCount = triple.positions?.length || 0;
+  const againstCount = triple.counter_positions?.length || 0;
+  const totalStakers = forCount + againstCount;
 
-  const { badge, color } = getTrustInfo(supportMarketCapNative, opposeMarketCapNative);
+  const total = supportMarketCapNative + opposeMarketCapNative;
+  const trustPercent = total > 0 ? (supportMarketCapNative / total) * 100 : 0;
 
-  // Perform distribution analysis
-  const forPositions = positionsToShares(triple.positions || []);
-  const againstPositions = positionsToShares(triple.counter_positions || []);
+  const forShares = positionsToShares(triple.positions || []);
+  const topStakerPercent = calculateTop1Percent(forShares);
 
-  const distributionAnalysis = analyzeTrustDistribution(
-    supportMarketCapNative,
-    opposeMarketCapNative,
-    forPositions,
-    againstPositions,
-  );
+  const trustIcon = total > 0
+    ? getTrustworthyIcon(trustPercent)
+    : '';
+  const topStakerIcon = forShares.length > 0
+    ? getTopStakerIcon(topStakerPercent)
+    : '';
+  const trustSummary = total > 0
+    ? getTrustSummary(trustPercent, totalStakers, topStakerPercent)
+    : null;
 
-  const distribution = getDistributionLabel(distributionAnalysis);
-
-  // Check if user has their own position (strongest signal)
   const { user_position, user_counter_position } = triple;
   const hasUserPosition = (user_position?.length ?? 0) > 0 || (user_counter_position?.length ?? 0) > 0;
 
@@ -194,39 +209,46 @@ export const OriginAtomWithTrustTriple = (
       <Row label="From">
         <Text><Bold>{hostname || origin?.label || 'Unknown'}</Bold></Text>
       </Row>
-      {/* Layer 1: User's own position - displayed first as the strongest signal */}
       {hasUserPosition && (
         <UserPositionSection
           userPosition={user_position ?? []}
           userCounterPosition={user_counter_position ?? []}
         />
       )}
-      {/* Layer 2: Trust Circle - social proof from people you trust */}
       {trustedCircle ? (
         <TrustedCircleSection
           forContacts={trustedCircle.forContacts}
           againstContacts={trustedCircle.againstContacts}
         />
       ) : null}
-      {/* Layer 3: Community context - aggregate metrics */}
-      <Row label="Community">
-        <Text color={color}><Bold>{badge}</Bold></Text>
-      </Row>
-      <Row label="Distribution">
-        <Text color={distribution.color}><Bold>{distribution.label}</Bold></Text>
-      </Row>
-      <Row label={`FOR (${supportCount})`}>
-        <Value
-          value={`${supportMarketCapNative.toFixed(2)} ${chainConfig.currencySymbol}`}
-          extra=""
-        />
-      </Row>
-      <Row label={`AGAINST (${opposeCount})`}>
-        <Value
-          value={`${opposeMarketCapNative.toFixed(2)} ${chainConfig.currencySymbol}`}
-          extra=""
-        />
-      </Row>
+      {total > 0 ? (
+        <Box>
+          <Row label="Trustworthy">
+            <Text>
+              <Bold>{`${trustIcon} ${trustPercent.toFixed(0)}%`}</Bold>
+            </Text>
+          </Row>
+          {forShares.length > 0 && (
+            <Row label="Top staker">
+              <Text>
+                <Bold>{topStakerIcon ? `${topStakerIcon} ${topStakerPercent.toFixed(0)}%` : `${topStakerPercent.toFixed(0)}%`}</Bold>
+              </Text>
+            </Row>
+          )}
+          <Row label="Stakers">
+            <Text>
+              <Bold>{`${forCount} FOR · ${againstCount} AGAINST`}</Bold>
+            </Text>
+          </Row>
+          {trustSummary ? (
+            <Text color="muted">{trustSummary}</Text>
+          ) : null}
+        </Box>
+      ) : (
+        <Row label="Trustworthy">
+          <Text color="muted"><Bold>No stakes yet</Bold></Text>
+        </Row>
+      )}
       <Text>
         <Link href={vendor.originAtomWithTrustTriple(params).url}>Vote on this dApp ↗</Link>
       </Text>

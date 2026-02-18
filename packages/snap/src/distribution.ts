@@ -41,11 +41,11 @@ export type DistributionStatus =
   | 'whale-dominated'; // Red    - Single whale or extreme concentration
 
 /**
- * MetaMask Snap color tokens (limited palette).
- * Maps to the Snap SDK color prop values.
- * Note: Only 'success', 'warning', and 'muted' are supported by Snap SDK Text component.
+ * MetaMask Snap color tokens.
+ * Maps to the Snap SDK Text component color prop values.
+ * Available: 'default', 'alternative', 'muted', 'error', 'success', 'warning'.
  */
-export type SnapColor = 'success' | 'warning' | 'muted' | 'default';
+export type SnapColor = 'default' | 'alternative' | 'muted' | 'error' | 'success' | 'warning';
 
 /**
  * Color mapping for each distribution status.
@@ -54,8 +54,8 @@ export type SnapColor = 'success' | 'warning' | 'muted' | 'default';
 export const DISTRIBUTION_SNAP_COLORS: Record<DistributionStatus, SnapColor> = {
   'well-distributed': 'success', // Green
   moderate: 'warning', // Yellow/Amber
-  concentrated: 'warning', // Orange (Snap doesn't have orange, use warning)
-  'whale-dominated': 'warning', // Red (Snap doesn't have 'error', use 'warning' as closest alternative)
+  concentrated: 'warning', // Orange (closest available)
+  'whale-dominated': 'error', // Red
 } as const;
 
 /**
@@ -281,8 +281,10 @@ export const DISTRIBUTION_THRESHOLDS = {
  *
  * Priority:
  * 1. If top staker holds >=80%, always "whale-dominated" (red)
- * 2. If <3 stakers, evaluate based on top1 concentration
- * 3. Otherwise, use Gini coefficient thresholds
+ * 2. If 0 stakers, "well-distributed" (neutral — UI shows "No Stakes" separately)
+ * 3. If <3 stakers, "concentrated" (1 staker is caught by step 1; 2 stakers
+ *    that survive step 1 always have top1 in [50%,80%) — always concentrated)
+ * 4. Otherwise, use Gini coefficient thresholds
  *
  * @param gini - Gini coefficient (0-1)
  * @param top1Percent - Percentage held by top staker (0-100)
@@ -300,21 +302,21 @@ export function determineStatus(
     minStakersForAnalysis,
   } = DISTRIBUTION_THRESHOLDS;
 
-  // Whale check takes priority
+  // Whale check takes priority — any staker count
   if (top1Percent >= top1Thresholds.concentrated) {
     return 'whale-dominated';
   }
 
-  // Too few stakers to assess distribution meaningfully
+  // No stakes = neutral (will show "No Stakes" elsewhere)
+  if (stakerCount === 0) {
+    return 'well-distributed';
+  }
+
+  // Too few stakers for Gini-based analysis.
+  // 1 staker is always caught by the whale check above (top1 = 100%).
+  // 2 stakers that reach here have top1 in [50%, 80%) — always concentrated.
   if (stakerCount < minStakersForAnalysis) {
-    // But still differentiate based on what we know
-    if (top1Percent >= top1Thresholds.moderate) {
-      return 'concentrated';
-    }
-    if (stakerCount === 0) {
-      return 'well-distributed'; // No stakes = neutral (will show "No Stakes" elsewhere)
-    }
-    return 'moderate'; // Few stakers but not dominated
+    return 'concentrated';
   }
 
   // Use Gini for nuanced assessment
