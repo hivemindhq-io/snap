@@ -61,7 +61,7 @@ If not logged in, tell the user to run `npm login` first and to publish from the
 If logged in, publish:
 ```bash
 cd packages/snap
-npm publish --access public
+npm publish --access public # this should be executed from the packages/snap directory!
 ```
 
 ### 8. Confirm success
