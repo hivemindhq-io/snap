@@ -6,6 +6,7 @@ import { renderOnTransaction } from './account';
 import { renderOriginInsight } from './origin';
 import { UnifiedFooter, AISummaryLoading, AISummaryView, AISummaryError } from './components';
 import { chainConfig } from './config';
+import { shouldSuppressOrigin } from './util';
 
 /** Shape of the context object passed from onTransaction via snap_createInterface */
 type TransactionContext = {
@@ -59,7 +60,7 @@ const rebuildOriginalUI = (context: TransactionContext) => {
   const accountUI = renderOnTransaction(accountProps);
 
   let originUI = null;
-  if (originProps?.originUrl !== 'metamask') {
+  if (!shouldSuppressOrigin(originProps?.originUrl, originProps?.hostname)) {
     originUI = renderOriginInsight(originProps);
   }
 

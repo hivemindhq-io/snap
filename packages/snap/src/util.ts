@@ -1,3 +1,24 @@
+const SUPPRESSED_ORIGINS = ['metamask', 'localhost'];
+
+/**
+ * Determines whether the origin section should be hidden from the Snap UI.
+ * Origins like "metamask" (internal) and "localhost" (local dev) provide
+ * no meaningful trust signal, so we suppress them entirely.
+ *
+ * @param originUrl - The raw transactionOrigin string
+ * @param hostname - The extracted hostname (e.g., "localhost" from "http://localhost:8080")
+ * @returns true if the origin section should be hidden
+ */
+export const shouldSuppressOrigin = (
+  originUrl: string | undefined,
+  hostname?: string | undefined,
+): boolean => {
+  if (!originUrl) return true;
+  if (SUPPRESSED_ORIGINS.includes(originUrl)) return true;
+  if (hostname && SUPPRESSED_ORIGINS.includes(hostname)) return true;
+  return false;
+};
+
 export const addressToCaip10 = (
   // input params formatted to fit MetaMask tx params
   address: string, // `0x${string}`,

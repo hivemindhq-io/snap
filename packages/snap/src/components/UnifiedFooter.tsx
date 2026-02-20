@@ -5,6 +5,7 @@ import { StakePrompt } from './Footer/actions/StakePrompt';
 import { CreateAlias } from './Footer/actions/CreateAlias';
 import { ViewMore } from './Footer/actions/ViewMore';
 import { OriginViewMore } from './OriginFooter/actions/OriginViewMore';
+import { shouldSuppressOrigin } from '../util';
 
 /**
  * Unified footer component that renders all CTAs at the bottom.
@@ -27,10 +28,8 @@ export const UnifiedFooter = ({
   accountProps: AccountProps;
   originProps: OriginProps;
 }) => {
-  // Check if origin has an atom (known dApp) for "View more" link
-  // Exclude 'metamask' origin - we don't want to link out to Explorer for MetaMask itself
   const hasOriginAtom =
-    originProps.originUrl !== 'metamask' &&
+    !shouldSuppressOrigin(originProps.originUrl, originProps.hostname) &&
     (originProps.originType === OriginType.AtomWithoutTrustTriple ||
      originProps.originType === OriginType.AtomWithTrustTriple);
 

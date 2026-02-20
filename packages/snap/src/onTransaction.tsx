@@ -21,6 +21,7 @@ import {
   enrichContactLabels,
   TrustedCirclePositions,
 } from './trusted-circle';
+import { shouldSuppressOrigin } from './util';
 
 /** Combined context for both account and origin data */
 type TransactionContext = {
@@ -132,9 +133,8 @@ export const onTransaction: OnTransactionHandler = async ({
 
   // Render both account and origin insights (information sections only)
   const accountUI = renderOnTransaction(accountProps);
-  // only render origin if originProps.originUrl !== 'metamask'
   let originUI = null;
-  if (originProps?.originUrl !== 'metamask') {
+  if (!shouldSuppressOrigin(originProps?.originUrl, originProps?.hostname)) {
     originUI = renderOriginInsight(originProps);
   }
 
