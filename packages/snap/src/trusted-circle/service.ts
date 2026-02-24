@@ -7,10 +7,10 @@
  * @module trusted-circle/service
  */
 
-import { graphQLQuery, getUserTrustedCircleQuery, getAtomsForAddressesQuery } from '../queries';
+import { graphQLQuery, getUserTrustedCircleQuery, getAtomsForAddressesQuery, getAllClaimsAboutAtomQuery } from '../queries';
 import { chainConfig, ChainConfig } from '../config';
 import { getTrustedCircleCache, setTrustedCircleCache } from './cache';
-import type { TrustedContact, TrustedCirclePositions } from './types';
+import type { TrustedContact, TrustedCirclePositions, FamiliarContact, NetworkFamiliarity, ClaimContext } from './types';
 
 /**
  * Response shape from the trusted circle GraphQL query.
@@ -230,6 +230,121 @@ function formatAddress(address: string): string {
     return address || 'Unknown';
   }
   return `${address.slice(0, 6)}...${address.slice(-4)}`;
+}
+
+/**
+ * Response shape from the "all claims about atom" query.
+ */
+interface AllClaimsResponse {
+  data: {
+    triples: {
+      term_id: string;
+      predicate_id: string;
+      object_id: string;
+      predicate: { label: string } | null;
+      object: { label: string } | null;
+      positions: { account_id: string; shares: string }[];
+      counter_positions: { account_id: string; shares: string }[];
+    }[];
+  };
+}
+
+/**
+ * Fetches all claims about an atom and cross-references with the user's trust circle.
+ * Returns contacts who have ANY claim about the target address,
+ * de-duplicated against those already shown in the TrustedCircle section.
+ *
+ * @param subjectAtomId - The term_id of the target address's atom
+ * @param trustedCircle - The user's trust circle contacts
+ * @param alreadyDisplayedIds - Set of account IDs already shown in TrustedCircle section (normalized lowercase)
+ * @param userAddress - The current user's address to exclude
+ * @returns Network familiarity data, or undefined if no relevant contacts
+ */
+export async function getNetworkFamiliarity(
+  subjectAtomId: string,
+  trustedCircle: TrustedContact[],
+  alreadyDisplayedIds: Set<string>,
+  userAddress?: string,
+): Promise<NetworkFamiliarity | undefined> {
+  if (trustedCircle.length === 0) {
+    return undefined;
+  }
+
+  const { hasTagAtomId, trustworthyAtomId } = chainConfig as ChainConfig;
+
+  try {
+    const response = (await graphQLQuery(getAllClaimsAboutAtomQuery, {
+      subjectId: subjectAtomId,
+      excludePredicateId: hasTagAtomId,
+      excludeObjectId: trustworthyAtomId,
+    })) as AllClaimsResponse;
+
+    const triples = response?.data?.triples || [];
+    if (triples.length === 0) {
+      return undefined;
+    }
+
+    const normalizedUserAddress = userAddress?.toLowerCase();
+    const trustedIds = new Set(
+      trustedCircle.map((c) => c.accountId.toLowerCase()),
+    );
+    const trustedLabels = new Map(
+      trustedCircle.map((c) => [c.accountId.toLowerCase(), c.label]),
+    );
+
+    // Collect claims per trusted contact, skipping already-displayed and the user
+    const contactClaimsMap = new Map<string, { accountId: string; label: string; claims: ClaimContext[] }>();
+
+    for (const triple of triples) {
+      const predicateLabel = triple.predicate?.label || 'unknown';
+      const objectLabel = triple.object?.label || 'unknown';
+      const claim: ClaimContext = { predicateLabel, objectLabel };
+
+      const allPositionAccounts = [
+        ...triple.positions.map((p) => p.account_id),
+        ...triple.counter_positions.map((p) => p.account_id),
+      ];
+
+      for (const accountId of allPositionAccounts) {
+        const normalized = accountId.toLowerCase();
+
+        if (normalized === normalizedUserAddress) continue;
+        if (alreadyDisplayedIds.has(normalized)) continue;
+        if (!trustedIds.has(normalized)) continue;
+
+        const existing = contactClaimsMap.get(normalized);
+        if (existing) {
+          // Only add claim if not already recorded for this contact
+          const hasClaim = existing.claims.some(
+            (c) => c.predicateLabel === claim.predicateLabel && c.objectLabel === claim.objectLabel,
+          );
+          if (!hasClaim) {
+            existing.claims.push(claim);
+          }
+        } else {
+          contactClaimsMap.set(normalized, {
+            accountId,
+            label: trustedLabels.get(normalized) || formatAddress(accountId),
+            claims: [claim],
+          });
+        }
+      }
+    }
+
+    const familiarContacts: FamiliarContact[] = Array.from(contactClaimsMap.values());
+
+    if (familiarContacts.length === 0) {
+      return undefined;
+    }
+
+    return {
+      familiarContacts,
+      totalClaimsAboutAddress: triples.length,
+    };
+  } catch (error) {
+    console.error('[TrustedCircle] Network familiarity query failed:', error);
+    return undefined;
+  }
 }
 
 /**
