@@ -359,6 +359,54 @@ query AtomsForAddresses($addresses: [String!]!) {
 }
 `;
 
+/**
+ * Query to find all triples where a given atom is the subject.
+ * Used to discover any claims made about an address by anyone,
+ * including the stakers (position holders) on each claim.
+ * Excludes the trust triple (hasTag trustworthy) since that's displayed separately.
+ *
+ * Returns predicate + object labels so we can show claim context
+ * (e.g., "tagged as DeFi Protocol").
+ */
+export const getAllClaimsAboutAtomQuery = `
+query AllClaimsAboutAtom($subjectId: String!, $excludePredicateId: String!, $excludeObjectId: String!) {
+  triples(
+    where: {
+      subject_id: { _eq: $subjectId },
+      _not: {
+        _and: [
+          { predicate_id: { _eq: $excludePredicateId } },
+          { object_id: { _eq: $excludeObjectId } }
+        ]
+      }
+    },
+    order_by: { triple_term: { total_market_cap: desc_nulls_last } },
+    limit: 20
+  ) {
+    term_id
+    predicate_id
+    object_id
+
+    predicate {
+      label
+    }
+    object {
+      label
+    }
+
+    positions(order_by: { shares: desc }, limit: 20) {
+      account_id
+      shares
+    }
+
+    counter_positions(order_by: { shares: desc }, limit: 20) {
+      account_id
+      shares
+    }
+  }
+}
+`;
+
 export const getListWithHighestStakeQuery = `
   query GetTriplesWithHighestStake($subjectId: String!, $predicateId: String!) {
     triples(
