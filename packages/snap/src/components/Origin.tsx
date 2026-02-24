@@ -10,12 +10,15 @@ import {
 import { OriginType, PropsForOriginType } from '../types';
 import { stringToDecimal } from '../util';
 import { chainConfig } from '../config';
+import { calculateNakamoto } from '../distribution';
 import { TrustedCircleSection } from './TrustedCircle';
 import { UserPositionSection } from './UserPosition';
 import { vendor } from '../vendors';
 
 const MIN_STAKERS_FOR_CONFIDENCE = 3;
 const TOP_STAKER_CONCERN_THRESHOLD = 25;
+const MIN_STAKERS_FOR_NAKAMOTO = 5;
+const NAKAMOTO_WELL_DISTRIBUTED_RATIO = 0.4;
 
 /**
  * Formats a native-unit market cap value for display with locale separators.
@@ -105,6 +108,26 @@ const calculateTop1Percent = (shares: number[]): number => {
   if (total === 0) return 0;
   const max = Math.max(...shares);
   return (max / total) * 100;
+};
+
+/**
+ * Returns a "Majority: N of M stakers" string when concentration is notable.
+ * Suppressed when fewer than MIN_STAKERS_FOR_NAKAMOTO stakers or when
+ * the ratio of nakamoto/total exceeds NAKAMOTO_WELL_DISTRIBUTED_RATIO
+ * (meaning the vault is well-distributed enough that it's unremarkable).
+ *
+ * @returns Display string or null if suppressed
+ */
+const getNakamotoDisplay = (shares: number[]): string | null => {
+  if (shares.length < MIN_STAKERS_FOR_NAKAMOTO) return null;
+
+  const nakamoto = calculateNakamoto(shares);
+  if (nakamoto === 0) return null;
+
+  const ratio = nakamoto / shares.length;
+  if (ratio > NAKAMOTO_WELL_DISTRIBUTED_RATIO) return null;
+
+  return `${nakamoto} of ${shares.length} stakers`;
 };
 
 /**
@@ -208,6 +231,7 @@ export const OriginAtomWithTrustTriple = (
 
   const forShares = positionsToShares(triple.positions || []);
   const topStakerPercent = calculateTop1Percent(forShares);
+  const nakamotoDisplay = getNakamotoDisplay(forShares);
 
   const trustIcon = total > 0
     ? getTrustworthyIcon(trustPercent)
@@ -254,6 +278,13 @@ export const OriginAtomWithTrustTriple = (
               </Text>
             </Row>
           )}
+          {nakamotoDisplay !== null ? (
+            <Row label="Majority">
+              <Text>
+                <Bold>{nakamotoDisplay}</Bold>
+              </Text>
+            </Row>
+          ) : null}
           <Row label="Total staked">
             <Text>
               <Bold>{formatMarketCap(total)}</Bold>
