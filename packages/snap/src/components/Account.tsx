@@ -11,6 +11,7 @@ import { AccountType, PropsForAccountType, AlternateTrustData } from '../types';
 import { stringToDecimal } from '../util';
 import { chainConfig } from '../config';
 import { TrustedCircleSection } from './TrustedCircle';
+import { NetworkFamiliaritySection } from './NetworkFamiliarity';
 import { UserPositionSection } from './UserPosition';
 
 const MIN_STAKERS_FOR_CONFIDENCE = 3;
@@ -167,7 +168,7 @@ export const NoAtom = (
 export const AtomWithoutTrustTriple = (
   params: PropsForAccountType<AccountType.AtomWithoutTrustTriple>,
 ) => {
-  const { address, account, alias, isContract, alternateTrustData } = params;
+  const { address, account, alias, isContract, alternateTrustData, networkFamiliarity } = params;
 
   return (
     <Section>
@@ -180,6 +181,9 @@ export const AtomWithoutTrustTriple = (
           <Text><Bold>{alias}</Bold></Text>
         </Row>
       )}
+      {networkFamiliarity ? (
+        <NetworkFamiliaritySection networkFamiliarity={networkFamiliarity} />
+      ) : null}
       <Row label="Status">
         <Text color="default">No trust rating yet</Text>
       </Row>
@@ -199,7 +203,7 @@ export const AtomWithoutTrustTriple = (
 export const AtomWithTrustTriple = (
   params: PropsForAccountType<AccountType.AtomWithTrustTriple>,
 ) => {
-  const { address, triple, alias, isContract, alternateTrustData, trustedCircle } = params;
+  const { address, triple, alias, isContract, alternateTrustData, trustedCircle, networkFamiliarity } = params;
   const {
     counter_term: {
       vaults: [counterVault],
@@ -262,6 +266,9 @@ export const AtomWithTrustTriple = (
           forContacts={trustedCircle.forContacts}
           againstContacts={trustedCircle.againstContacts}
         />
+      ) : null}
+      {networkFamiliarity ? (
+        <NetworkFamiliaritySection networkFamiliarity={networkFamiliarity} />
       ) : null}
       {total > 0 ? (
         <Box>

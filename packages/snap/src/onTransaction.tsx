@@ -19,7 +19,9 @@ import {
   getTrustedCircle,
   getTrustedContactsWithPositions,
   enrichContactLabels,
+  getNetworkFamiliarity,
   TrustedCirclePositions,
+  NetworkFamiliarity,
 } from './trusted-circle';
 import { shouldSuppressOrigin } from './util';
 
@@ -89,6 +91,28 @@ export const onTransaction: OnTransactionHandler = async ({
     }
   }
 
+  // Calculate network familiarity (trusted contacts with ANY claim about this address)
+  let accountNetworkFamiliarity: NetworkFamiliarity | undefined;
+  if (trustedCircle.length > 0 && accountData.account) {
+    // Build set of account IDs already shown in TrustedCircle section for de-duplication
+    const alreadyDisplayedIds = new Set<string>();
+    if (accountTrustedCircle) {
+      for (const c of accountTrustedCircle.forContacts) {
+        alreadyDisplayedIds.add(c.accountId.toLowerCase());
+      }
+      for (const c of accountTrustedCircle.againstContacts) {
+        alreadyDisplayedIds.add(c.accountId.toLowerCase());
+      }
+    }
+
+    accountNetworkFamiliarity = await getNetworkFamiliarity(
+      accountData.account.term_id,
+      trustedCircle,
+      alreadyDisplayedIds,
+      userAddress,
+    );
+  }
+
   // Calculate trusted circle positions for origin trust triple
   let originTrustedCircle: TrustedCirclePositions | undefined;
   if (trustedCircle.length > 0 && originData.triple) {
@@ -121,6 +145,7 @@ export const onTransaction: OnTransactionHandler = async ({
     chainId,
     transactionOrigin,
     trustedCircle: accountTrustedCircle,
+    networkFamiliarity: accountNetworkFamiliarity,
   } as AccountProps; // Type assertion needed due to the discriminated union
 
   // Create origin props
