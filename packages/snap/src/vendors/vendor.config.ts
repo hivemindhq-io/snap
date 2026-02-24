@@ -102,6 +102,25 @@ export type VendorConfig = {
 };
 
 /* ═══════════════════════════════════════════════════════════════════════════
+ * ADDRESS RESOLUTION
+ *
+ * Contracts are chain-specific (same address can be different contracts on
+ * different chains), so they get CAIP-10 format: caip10:eip155:{chainId}:0x...
+ * EOAs are the same human across all chains, so they stay as plain 0x.
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+/**
+ * Resolves the address to use in outbound URLs.
+ * Contracts use CAIP-10 (chain-specific identity), EOAs use plain 0x.
+ */
+const resolveAddressForUrl = (params: { address: string; isContract: boolean; chainId: string }): string => {
+  if (params.isContract) {
+    return addressToCaip10(params.address, params.chainId);
+  }
+  return params.address;
+};
+
+/* ═══════════════════════════════════════════════════════════════════════════
  * URL BUILDERS - Customize these functions for your explorer's URL structure
  * ═══════════════════════════════════════════════════════════════════════════ */
 
@@ -122,16 +141,12 @@ export const vendorConfig: VendorConfig = {
   /**
    * No atom exists for this address.
    * Link to address page with ?action=trust to open create claim modal.
-   *
-   * The Explorer will:
-   * 1. Detect no atom exists
-   * 2. Open CreateClaimModal with subjectData (address)
-   * 3. Modal creates atom + trust triple in one flow
+   * Contracts use CAIP-10 format; EOAs use plain 0x.
    */
   noAtom: (params) => {
-    const { address } = params;
+    const resolvedAddress = resolveAddressForUrl(params);
 
-    const url = new URL(`/address/${address}`, baseUrl);
+    const url = new URL(`/address/${resolvedAddress}`, baseUrl);
     url.searchParams.set('action', 'trust');
 
     return { url: url.toString() };
@@ -140,16 +155,12 @@ export const vendorConfig: VendorConfig = {
   /**
    * Atom exists but no trust triple.
    * Link to address page with ?action=trust.
-   *
-   * The Explorer will:
-   * 1. Detect atom exists but no trust triple
-   * 2. Open CreateClaimModal with preselectedType='trust'
-   * 3. Modal creates trust triple
+   * Contracts use CAIP-10 format; EOAs use plain 0x.
    */
   atomWithoutTrustTriple: (params) => {
-    const { address } = params;
+    const resolvedAddress = resolveAddressForUrl(params);
 
-    const url = new URL(`/address/${address}`, baseUrl);
+    const url = new URL(`/address/${resolvedAddress}`, baseUrl);
     url.searchParams.set('action', 'trust');
 
     return { url: url.toString() };
@@ -158,16 +169,12 @@ export const vendorConfig: VendorConfig = {
   /**
    * Trust triple exists.
    * Link to address page with ?action=trust.
-   *
-   * The Explorer will:
-   * 1. Detect trust triple exists
-   * 2. Open CreateClaimModal with existingTripleId
-   * 3. User goes directly to staking step
+   * Contracts use CAIP-10 format; EOAs use plain 0x.
    */
   atomWithTrustTriple: (params) => {
-    const { address } = params;
+    const resolvedAddress = resolveAddressForUrl(params);
 
-    const url = new URL(`/address/${address}`, baseUrl);
+    const url = new URL(`/address/${resolvedAddress}`, baseUrl);
     url.searchParams.set('action', 'trust');
 
     return { url: url.toString() };
@@ -175,22 +182,23 @@ export const vendorConfig: VendorConfig = {
 
   /**
    * View address details page.
-   * Uses semantic address route for consistency.
+   * Contracts use CAIP-10 format; EOAs use plain 0x.
    */
   viewAtom: (params) => {
-    const { address } = params;
+    const resolvedAddress = resolveAddressForUrl(params);
 
-    return { url: new URL(`/address/${address}`, baseUrl).toString() };
+    return { url: new URL(`/address/${resolvedAddress}`, baseUrl).toString() };
   },
 
   /**
    * Create an alias for an address.
    * Link to address page with ?action=alias.
+   * Contracts use CAIP-10 format; EOAs use plain 0x.
    */
   createAlias: (params) => {
-    const { address } = params;
+    const resolvedAddress = resolveAddressForUrl(params);
 
-    const url = new URL(`/address/${address}`, baseUrl);
+    const url = new URL(`/address/${resolvedAddress}`, baseUrl);
     url.searchParams.set('action', 'alias');
 
     return { url: url.toString() };
