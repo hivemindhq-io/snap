@@ -1,23 +1,28 @@
 /**
  * Shared trust statistics display block.
  *
- * Renders the common trust stats rows (Trustworthy %, Top staker,
- * Majority, Total staked, Stakers, summary) used by both Account
- * and Origin components.
+ * Renders the common trust stats rows (Signal icon, Trustworthy %,
+ * Top staker %, Majority, Stakers, advisory summary) used by both
+ * Account and Origin components.
+ *
+ * The single composite icon reflects the worst of four dimensions
+ * (trust %, staker count, top-1 concentration, Nakamoto coefficient)
+ * so the user gets an honest at-a-glance signal. Total staked is
+ * folded into the advisory text for context.
  *
  * @module components/TrustStatsBlock
  */
 
 import { Box, Row, Text, Bold } from '@metamask/snaps-sdk/jsx';
 import { stringToDecimal } from '../util';
+import { calculateNakamoto } from '../distribution';
 import {
-  formatMarketCap,
-  getTrustworthyIcon,
-  getTopStakerIcon,
+  getCompositeIcon,
   getTrustSummary,
   positionsToShares,
   calculateTop1Percent,
   getNakamotoDisplay,
+  MIN_STAKERS_FOR_NAKAMOTO,
 } from './trust-stats';
 
 /**
@@ -36,8 +41,9 @@ export interface TrustStatsBlockProps {
 }
 
 /**
- * Displays trust statistics rows: Trustworthy %, Top staker, Majority,
- * Total staked, Stakers count, and advisory summary.
+ * Displays trust statistics rows: a standalone composite Signal icon,
+ * Trustworthy %, Top staker %, Majority, Stakers count, and advisory
+ * summary (which includes total staked for context).
  *
  * When total staked is zero, shows a "No stakes yet" fallback.
  *
@@ -62,16 +68,16 @@ export const TrustStatsBlock = ({
 
   const forShares = positionsToShares(positions);
   const topStakerPercent = calculateTop1Percent(forShares);
+  const nakamotoCount = forShares.length >= MIN_STAKERS_FOR_NAKAMOTO
+    ? calculateNakamoto(forShares)
+    : 0;
   const nakamotoDisplay = getNakamotoDisplay(forShares);
 
-  const trustIcon = total > 0
-    ? getTrustworthyIcon(trustPercent)
-    : '';
-  const topStakerIcon = forShares.length > 0
-    ? getTopStakerIcon(topStakerPercent)
+  const compositeIcon = total > 0
+    ? getCompositeIcon(trustPercent, totalStakers, topStakerPercent, nakamotoCount)
     : '';
   const trustSummary = total > 0
-    ? getTrustSummary(trustPercent, totalStakers, topStakerPercent)
+    ? getTrustSummary(trustPercent, totalStakers, topStakerPercent, total, nakamotoCount)
     : null;
 
   if (total <= 0) {
@@ -84,15 +90,20 @@ export const TrustStatsBlock = ({
 
   return (
     <Box>
+      <Row label="Signal">
+        <Text>
+          <Bold>{compositeIcon}</Bold>
+        </Text>
+      </Row>
       <Row label="Trustworthy">
         <Text>
-          <Bold>{`${trustIcon} ${trustPercent.toFixed(0)}%`}</Bold>
+          <Bold>{`${trustPercent.toFixed(0)}%`}</Bold>
         </Text>
       </Row>
       {forShares.length > 0 && (
         <Row label="Top staker">
           <Text>
-            <Bold>{topStakerIcon ? `${topStakerIcon} ${topStakerPercent.toFixed(0)}%` : `${topStakerPercent.toFixed(0)}%`}</Bold>
+            <Bold>{`${topStakerPercent.toFixed(0)}%`}</Bold>
           </Text>
         </Row>
       )}
@@ -103,11 +114,6 @@ export const TrustStatsBlock = ({
           </Text>
         </Row>
       ) : null}
-      <Row label="Total staked">
-        <Text>
-          <Bold>{formatMarketCap(total)}</Bold>
-        </Text>
-      </Row>
       <Row label="Stakers">
         <Text>
           <Bold>{`${forCount} FOR · ${againstCount} AGAINST`}</Bold>
