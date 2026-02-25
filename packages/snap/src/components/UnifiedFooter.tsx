@@ -2,7 +2,6 @@ import { Box, Divider, Button } from '@metamask/snaps-sdk/jsx';
 import { AccountProps, AccountType, OriginProps, OriginType } from '../types';
 import { CreateTrustTriple } from './Footer/actions/CreateTrustTriple';
 import { StakePrompt } from './Footer/actions/StakePrompt';
-import { CreateAlias } from './Footer/actions/CreateAlias';
 import { ViewMore } from './Footer/actions/ViewMore';
 import { OriginViewMore } from './OriginFooter/actions/OriginViewMore';
 import { shouldSuppressOrigin } from '../util';
@@ -18,8 +17,8 @@ import { shouldSuppressOrigin } from '../util';
  *
  * Each action component is self-gating: it returns null if conditions aren't met.
  *
- * Note: Origin voting/creation CTAs are now inline within the Origin section
- * for better contextual UX. Only "View more" remains in the footer.
+ * Note: Origin voting/creation CTAs and "Add alias" are now inline within
+ * their respective sections for better contextual UX.
  */
 export const UnifiedFooter = ({
   accountProps,
@@ -56,9 +55,6 @@ export const UnifiedFooter = ({
 
         {/* Priority 2: Stake on trust triple */}
         <StakePrompt {...accountProps} />
-
-        {/* Priority 3: Create alias */}
-        <CreateAlias {...accountProps} />
 
         {/* Always: View more on vendor site */}
         <ViewMore {...accountProps} />

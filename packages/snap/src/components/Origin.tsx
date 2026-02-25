@@ -130,9 +130,6 @@ export const OriginAtomWithTrustTriple = (
         positions={triple.positions || []}
         counterPositions={triple.counter_positions || []}
       />
-      <Text>
-        <Link href={vendor.originAtomWithTrustTriple(params).url}>Vote on this dApp ↗</Link>
-      </Text>
     </Section>
   );
 };
