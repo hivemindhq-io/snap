@@ -5,9 +5,11 @@ import {
   Heading,
   Bold,
   Section,
+  Link,
 } from '@metamask/snaps-sdk/jsx';
 import { AccountType, PropsForAccountType, AlternateTrustData } from '../types';
 import { chainConfig } from '../config';
+import { vendor } from '../vendors';
 import { TrustedCircleSection } from './TrustedCircle';
 import { NetworkFamiliaritySection } from './NetworkFamiliarity';
 import { UserPositionSection } from './UserPosition';
@@ -37,7 +39,7 @@ const AlternateTrustNote = ({
 
   const noteText = alternateTrustData.alternateIsCaip
     ? `Also has data as a contract on ${chainConfig.chainName}`
-    : `Also has data as an EOA`;
+    : `Also has data as wallet address`;
 
   return (
     <Text color="default">{noteText}</Text>
@@ -94,6 +96,11 @@ export const AtomWithoutTrustTriple = (
           <Text><Bold>{alias}</Bold></Text>
         </Row>
       )}
+      {!alias && (
+        <Text>
+          <Link href={vendor.createAlias(params).url}>Add alias ↗</Link>
+        </Text>
+      )}
       {networkFamiliarity ? (
         <NetworkFamiliaritySection networkFamiliarity={networkFamiliarity} />
       ) : null}
@@ -142,6 +149,11 @@ export const AtomWithTrustTriple = (
         <Row label="Alias">
           <Text><Bold>{alias}</Bold></Text>
         </Row>
+      )}
+      {!alias && (
+        <Text>
+          <Link href={vendor.createAlias(params).url}>Add alias ↗</Link>
+        </Text>
       )}
       {hasUserPosition && (
         <UserPositionSection
