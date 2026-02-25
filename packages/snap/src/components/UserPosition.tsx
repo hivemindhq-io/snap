@@ -39,9 +39,9 @@ function formatShares(shares: string): string {
  * Props for UserPositionSection component.
  */
 export interface UserPositionSectionProps {
-  /** User's position on the FOR side (trusts) */
+  /** User's position on the FOR side */
   userPosition?: UserPositionData[];
-  /** User's position on the AGAINST side (distrusts) */
+  /** User's position on the AGAINST side */
   userCounterPosition?: UserPositionData[];
 }
 
@@ -49,7 +49,7 @@ export interface UserPositionSectionProps {
  * Displays the user's own position on the current trust triple.
  *
  * This is the most important trust signal - the user's own prior judgment.
- * Shows FOR (trust) and AGAINST (distrust) positions with stake amounts.
+ * Shows FOR and AGAINST positions with stake amounts.
  * Hides entirely if user has no position.
  *
  * @param props - Component props with user position data
@@ -73,7 +73,7 @@ export const UserPositionSection = ({
       <Heading size="sm">Your Position</Heading>
 
       {forPosition ? (
-        <Row label="You TRUST">
+        <Row label="FOR">
           <Text color="success">
             <Bold>{formatShares(forPosition.shares)}</Bold>
           </Text>
@@ -81,7 +81,7 @@ export const UserPositionSection = ({
       ) : null}
 
       {againstPosition ? (
-        <Row label="You DISTRUST">
+        <Row label="AGAINST">
           <Text color="warning">
             <Bold>{formatShares(againstPosition.shares)}</Bold>
           </Text>
