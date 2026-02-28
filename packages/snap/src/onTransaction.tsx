@@ -23,12 +23,17 @@ import {
   TrustedCirclePositions,
   NetworkFamiliarity,
 } from './trusted-circle';
+import { getFeatureConfig, getNativeBalance } from './feature-config';
+import type { FeatureConfig } from './feature-config';
 import { shouldSuppressOrigin } from './util';
 
 /** Combined context for both account and origin data */
 type TransactionContext = {
   account: AccountProps;
   origin: OriginProps;
+  featureConfig: FeatureConfig;
+  /** Whether the user passed all AI gating checks at render time */
+  aiAllowed: boolean;
 };
 
 /**
@@ -57,11 +62,22 @@ export const onTransaction: OnTransactionHandler = async ({
   // "to" ENS addresses arrive here as EVM addresses, EVM addresses arrive as EVM addresses
   const userAddress: string | undefined = transaction.from;
 
-  const [accountData, originData, trustedCircle] = await Promise.all([
+  const [accountData, originData, trustedCircle, featureConfig] = await Promise.all([
     getAccountData(transaction, chainId, userAddress),
     getOriginData(transactionOrigin, userAddress),
     userAddress ? getTrustedCircle(userAddress) : Promise.resolve([]),
+    getFeatureConfig(),
   ]);
+
+  // Determine if AI features pass all gating checks
+  let aiAllowed = featureConfig.ai.enabled;
+  if (aiAllowed && userAddress) {
+    const minBalance = BigInt(featureConfig.ai.gating.minNativeBalance || '0');
+    if (minBalance > 0n) {
+      const balance = await getNativeBalance(userAddress);
+      aiAllowed = balance >= minBalance;
+    }
+  }
 
   const accountType = getAccountType(accountData);
   const originType = getOriginType(originData, transactionOrigin);
@@ -164,7 +180,12 @@ export const onTransaction: OnTransactionHandler = async ({
 
   // Render unified footer with all CTAs at the bottom
   const footerUI = (
-    <UnifiedFooter accountProps={accountProps} originProps={originProps} />
+    <UnifiedFooter
+      accountProps={accountProps}
+      originProps={originProps}
+      featureConfig={featureConfig}
+      aiAllowed={aiAllowed}
+    />
   );
 
   // Combine into final UI: info sections first, then all CTAs at bottom
@@ -180,6 +201,8 @@ export const onTransaction: OnTransactionHandler = async ({
   const context = toSerializableContext({
     account: accountProps,
     origin: originProps,
+    featureConfig,
+    aiAllowed,
   });
 
   const interfaceId = await snap.request({

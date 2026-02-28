@@ -2,6 +2,7 @@ import type { OnUserInputHandler } from '@metamask/snaps-sdk';
 import { UserInputEventType } from '@metamask/snaps-sdk';
 import { Box } from '@metamask/snaps-sdk/jsx';
 import type { AccountProps, OriginProps } from './types';
+import type { FeatureConfig } from './feature-config';
 import { renderOnTransaction } from './account';
 import { renderOriginInsight } from './origin';
 import { UnifiedFooter, AISummaryLoading, AISummaryView, AISummaryError } from './components';
@@ -12,6 +13,8 @@ import { shouldSuppressOrigin } from './util';
 type TransactionContext = {
   account: AccountProps;
   origin: OriginProps;
+  featureConfig: FeatureConfig;
+  aiAllowed: boolean;
 };
 
 const SUMMARY_TIMEOUT_MS = 30_000;
@@ -56,6 +59,8 @@ const fetchAISummary = async (
 const rebuildOriginalUI = (context: TransactionContext) => {
   const accountProps = context.account;
   const originProps = context.origin;
+  const featureConfig = context.featureConfig;
+  const aiAllowed = context.aiAllowed ?? false;
 
   const accountUI = renderOnTransaction(accountProps);
 
@@ -65,7 +70,12 @@ const rebuildOriginalUI = (context: TransactionContext) => {
   }
 
   const footerUI = (
-    <UnifiedFooter accountProps={accountProps} originProps={originProps} />
+    <UnifiedFooter
+      accountProps={accountProps}
+      originProps={originProps}
+      featureConfig={featureConfig}
+      aiAllowed={aiAllowed}
+    />
   );
 
   return (
@@ -85,6 +95,13 @@ export const onUserInput: OnUserInputHandler = async ({ id, event, context }) =>
   const txContext = context as unknown as TransactionContext;
 
   if (event.name === 'ai_summary') {
+    // Defense-in-depth: re-check that AI is allowed via the context snapshot.
+    // The button should be hidden when AI is disabled, but if the config
+    // was updated between render and click, this prevents execution.
+    if (!txContext?.aiAllowed) {
+      return;
+    }
+
     const address = txContext?.account?.address;
     if (!address) {
       return;
