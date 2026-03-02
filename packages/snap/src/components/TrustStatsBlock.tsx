@@ -1,28 +1,23 @@
 /**
- * Shared trust statistics display block.
+ * Trust signal display block.
  *
- * Renders the common trust stats rows (Signal icon, Trustworthy %,
- * Top staker %, Majority, Stakers, advisory summary) used by both
+ * Renders a color-coded headline ("Widely Trusted", "Community Concern",
+ * etc.) followed by 1-2 lines of verifiable on-chain facts. Used by both
  * Account and Origin components.
  *
- * The single composite icon reflects the worst of four dimensions
- * (trust %, staker count, top-1 concentration, Nakamoto coefficient)
- * so the user gets an honest at-a-glance signal. Total staked is
- * folded into the advisory text for context.
+ * The color is determined by the FOR/AGAINST ratio (95/85/70 thresholds)
+ * and can be downgraded by distribution concerns (whale domination or
+ * thin participation). Every number shown is directly verifiable on-chain.
  *
  * @module components/TrustStatsBlock
  */
 
 import { Box, Row, Text, Bold } from '@metamask/snaps-sdk/jsx';
 import { stringToDecimal } from '../util';
-import { calculateNakamoto } from '../distribution';
 import {
-  getCompositeIcon,
-  getTrustSummary,
   positionsToShares,
-  calculateTop1Percent,
-  getNakamotoDisplay,
-  MIN_STAKERS_FOR_NAKAMOTO,
+  determineTrustTier,
+  TIER_EMOJI,
 } from './trust-stats';
 
 /**
@@ -41,14 +36,14 @@ export interface TrustStatsBlockProps {
 }
 
 /**
- * Displays trust statistics rows: a standalone composite Signal icon,
- * Trustworthy %, Top staker %, Majority, Stakers count, and advisory
- * summary (which includes total staked for context).
+ * Displays a trust tier headline with supporting fact lines.
  *
- * When total staked is zero, shows a "No stakes yet" fallback.
+ * Replaces the previous 6-row stats block (Signal/Trustworthy%/Top staker/
+ * Majority/Stakers/advisory) with a single cohesive signal: color + headline
+ * + evidence. The color is the opinion; the facts are the proof.
  *
  * @param props - Raw vault and position data
- * @returns Trust stats JSX block
+ * @returns Trust tier JSX block
  */
 export const TrustStatsBlock = ({
   supportMarketCap,
@@ -56,72 +51,24 @@ export const TrustStatsBlock = ({
   positions,
   counterPositions,
 }: TrustStatsBlockProps) => {
-  const supportMarketCapNative = stringToDecimal(supportMarketCap, 18);
-  const opposeMarketCapNative = stringToDecimal(opposeMarketCap, 18);
-
-  const total = supportMarketCapNative + opposeMarketCapNative;
-  const trustPercent = total > 0 ? (supportMarketCapNative / total) * 100 : 0;
-
-  const forCount = positions.length;
-  const againstCount = counterPositions.length;
-  const totalStakers = forCount + againstCount;
-
+  const supportNative = stringToDecimal(supportMarketCap, 18);
+  const opposeNative = stringToDecimal(opposeMarketCap, 18);
   const forShares = positionsToShares(positions);
-  const topStakerPercent = calculateTop1Percent(forShares);
-  const nakamotoCount = forShares.length >= MIN_STAKERS_FOR_NAKAMOTO
-    ? calculateNakamoto(forShares)
-    : 0;
-  const nakamotoDisplay = getNakamotoDisplay(forShares);
+  const againstCount = counterPositions.length;
 
-  const compositeIcon = total > 0
-    ? getCompositeIcon(trustPercent, totalStakers, topStakerPercent, nakamotoCount)
-    : '';
-  const trustSummary = total > 0
-    ? getTrustSummary(trustPercent, totalStakers, topStakerPercent, total, nakamotoCount)
-    : null;
-
-  if (total <= 0) {
-    return (
-      <Row label="Trustworthy">
-        <Text color="muted"><Bold>No stakes yet</Bold></Text>
-      </Row>
-    );
-  }
+  const tier = determineTrustTier(supportNative, opposeNative, forShares, againstCount);
+  const emoji = TIER_EMOJI[tier.color];
 
   return (
     <Box>
-      <Row label="Signal">
+      <Row label="Trust Signal">
         <Text>
-          <Bold>{compositeIcon}</Bold>
+          <Bold>{`${emoji} ${tier.headline}`}</Bold>
         </Text>
       </Row>
-      <Row label="Trustworthy">
-        <Text>
-          <Bold>{`${trustPercent.toFixed(0)}%`}</Bold>
-        </Text>
-      </Row>
-      {forShares.length > 0 && (
-        <Row label="Top staker">
-          <Text>
-            <Bold>{`${topStakerPercent.toFixed(0)}%`}</Bold>
-          </Text>
-        </Row>
-      )}
-      {nakamotoDisplay !== null ? (
-        <Row label="Majority">
-          <Text>
-            <Bold>{nakamotoDisplay}</Bold>
-          </Text>
-        </Row>
-      ) : null}
-      <Row label="Stakers">
-        <Text>
-          <Bold>{`${forCount} FOR · ${againstCount} AGAINST`}</Bold>
-        </Text>
-      </Row>
-      {trustSummary ? (
-        <Text color="alternative">{trustSummary}</Text>
-      ) : null}
+      {tier.facts.map((fact, i) => (
+        <Text key={`tier-fact-${i}`} color="alternative">{fact}</Text>
+      ))}
     </Box>
   );
 };
