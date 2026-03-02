@@ -279,30 +279,22 @@ describe('AtomWithTrustTriple Component', () => {
     expect(rendered).toContain('Satoshi');
   });
 
-  it('should display FOR stats with position count', () => {
+  it('should display trust tier with FOR and AGAINST counts', () => {
     const result = AtomWithTrustTriple(baseAtomWithTripleProps);
     const rendered = renderToString(result);
 
-    // mockTriple has 2 positions (we defined positions array with 2 elements)
-    expect(rendered).toContain('FOR (2)');
+    // mockTriple: 2.5 FOR / 0.75 AGAINST = 77% ratio → Red tier
+    expect(rendered).toContain('Community Concern');
+    expect(rendered).toContain('2 FOR');
+    expect(rendered).toContain('1 AGAINST');
   });
 
-  it('should display AGAINST stats with position count', () => {
+  it('should display total market cap with currency symbol', () => {
     const result = AtomWithTrustTriple(baseAtomWithTripleProps);
     const rendered = renderToString(result);
 
-    // mockTriple has 1 counter_position
-    expect(rendered).toContain('AGAINST (1)');
-  });
-
-  it('should display market cap values with currency symbol', () => {
-    const result = AtomWithTrustTriple(baseAtomWithTripleProps);
-    const rendered = renderToString(result);
-
-    // Support market cap is 2.5 TRUST, oppose is 0.75 TRUST
-    expect(rendered).toContain('2.50');
-    expect(rendered).toContain('0.75');
-    // Should contain currency symbol (TTRUST - uppercase from chain config)
+    // Total is 3.25 TTRUST
+    expect(rendered).toContain('3.25');
     expect(rendered).toContain('TTRUST');
   });
 
@@ -337,7 +329,8 @@ describe('AtomWithTrustTriple Component', () => {
     });
     const rendered = renderToString(result);
 
-    expect(rendered).toContain('0.00');
+    expect(rendered).toContain('No Stakes Yet');
+    expect(rendered).toContain('No one has rated this yet');
   });
 
   it('should display alias when present', () => {
@@ -388,7 +381,7 @@ describe('AlternateTrustNote', () => {
     const result = NoAtom(noAtomProps);
     const rendered = renderToString(result);
 
-    expect(rendered).toContain('Also has data as an EOA');
+    expect(rendered).toContain('Also has data as wallet address');
   });
 
   it('should show contract note when alternate is CAIP', () => {
