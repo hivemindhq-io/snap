@@ -1,6 +1,6 @@
 import type { OnUserInputHandler } from '@metamask/snaps-sdk';
 import { UserInputEventType } from '@metamask/snaps-sdk';
-import { Box } from '@metamask/snaps-sdk/jsx';
+import { Box, Heading, Text, Button } from '@metamask/snaps-sdk/jsx';
 import type { AccountProps, OriginProps } from './types';
 import type { FeatureConfig } from './feature-config';
 import { renderOnTransaction } from './account';
@@ -88,6 +88,7 @@ const rebuildOriginalUI = (context: TransactionContext) => {
 };
 
 export const onUserInput: OnUserInputHandler = async ({ id, event, context }) => {
+  console.log('KYLAN | onUserInput called', JSON.stringify({ id, event, context }, null, 2));
   if (event.type !== UserInputEventType.ButtonClickEvent) {
     return;
   }
@@ -169,5 +170,108 @@ export const onUserInput: OnUserInputHandler = async ({ id, event, context }) =>
         ui: originalUI,
       },
     });
+  } else if (event.name === 'test_create_session') {
+    console.log('KYLAN | test_create_session called');
+    const chainScope = `eip155:${chainConfig.chainId}`;
+    console.log('KYLAN | chainScope', chainScope);
+    try {
+      console.log('KYLAN | calling wallet_createSession');
+      const session = await (snap.request as any)({
+        method: 'wallet_createSession',
+        params: {
+          optionalScopes: {
+            [chainScope]: {
+              methods: ['eth_sendTransaction', 'eth_getBalance', 'eth_chainId'],
+              notifications: [],
+              accounts: [],
+            },
+          },
+        },
+      });
+      console.log('KYLAN | session', JSON.stringify(session, null, 2));
+      await snap.request({
+        method: 'snap_updateInterface',
+        params: {
+          id,
+          ui: (
+            <Box>
+              <Heading>Session Created</Heading>
+              <Text>Scope: {chainScope}</Text>
+              <Text>Result: {JSON.stringify(session).slice(0, 500)}</Text>
+              <Button name="test_send_tx">Step 2: Send Transaction</Button>
+            </Box>
+          ),
+        },
+      });
+      console.log('KYLAN | test_create_session updated interface');
+    } catch (err: any) {
+      console.log('KYLAN | test_create_session failed', JSON.stringify({ err }, null, 2));
+      await snap.request({
+        method: 'snap_updateInterface',
+        params: {
+          id,
+          ui: (
+            <Box>
+              <Heading>Session Failed</Heading>
+              <Text>{String(err?.message || err)}</Text>
+            </Box>
+          ),
+        },
+      });
+      console.log('KYLAN | test_create_session updated interface failed');
+    }
+  } else if (event.name === 'test_send_tx') {
+    const chainScope = `eip155:${chainConfig.chainId}`;
+    try {
+      const session = await (snap.request as any)({ method: 'wallet_getSession' });
+      const accounts = session.sessionScopes[chainScope]?.accounts ?? [];
+      // accounts[0] is like "eip155:1155:0xAbC123..."
+      const from = accounts[0]?.split(':').pop();
+
+      const params = [{
+        from,
+        to: '0xCF806BacAFBbcf09959B1866b5c1479fbEF97e05',
+        value: '0x0',
+        data: '0x',
+      }];
+      console.log('KYLAN | test_send_tx calling wallet_invokeMethod', JSON.stringify({ params }, null, 2));
+      const result = await (snap.request as any)({
+        method: 'wallet_invokeMethod',
+        params: {
+          scope: chainScope,
+          request: {
+            method: 'eth_sendTransaction',
+            params,
+          },
+        },
+      });
+
+      await snap.request({
+        method: 'snap_updateInterface',
+        params: {
+          id,
+          ui: (
+            <Box>
+              <Heading>Transaction Sent</Heading>
+              <Text>TX Hash: {String(result)}</Text>
+            </Box>
+          ),
+        },
+      });
+    } catch (err: any) {
+      console.log('KYLAN | test_send_tx failed', { err });
+      await snap.request({
+        method: 'snap_updateInterface',
+        params: {
+          id,
+          ui: (
+            <Box>
+              <Heading>Transaction Failed</Heading>
+              <Text>{String(err?.message || err)}</Text>
+            </Box>
+          ),
+        },
+      });
+    }
   }
 };

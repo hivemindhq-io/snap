@@ -7,7 +7,7 @@
     "url": "https://github.com/hivemindhq-io/snap"
   },
   "source": {
-    "shasum": "2tlFpC1u7gd+xgTPJrzVBHjAksoZeGuy8L3K+q0JBJM=",
+    "shasum": "u4nN+Rvxkh59+HPh0CgwLf5U3gJbiEr01jGn9OPbHws=",
     "location": {
       "npm": {
         "filePath": "dist/bundle.js",
@@ -27,7 +27,8 @@
       "dapps": true,
       "snaps": false
     },
-    "snap_manageState": {}
+    "snap_manageState": {},
+    "endowment:multichain-provider": {}
   },
   "manifestVersion": "0.1"
 }
