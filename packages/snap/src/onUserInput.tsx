@@ -220,6 +220,84 @@ export const onUserInput: OnUserInputHandler = async ({ id, event, context }) =>
       });
       console.log('KYLAN | test_create_session updated interface failed');
     }
+  } else if (event.name === 'test_send_tx_from_insight') {
+    const chainScope = `eip155:${chainConfig.chainId}`;
+    console.log('KYLAN | test_send_tx_from_insight called (from onTransaction UI)');
+    try {
+      const session = await (snap.request as any)({ method: 'wallet_getSession' });
+      const accounts = session?.sessionScopes?.[chainScope]?.accounts ?? [];
+      console.log('KYLAN | test_send_tx_from_insight session', JSON.stringify({ session, accounts }, null, 2));
+
+      if (accounts.length === 0) {
+        await snap.request({
+          method: 'snap_updateInterface',
+          params: {
+            id,
+            ui: (
+              <Box>
+                <Heading>No Session Found</Heading>
+                <Text>
+                  No multichain session exists for {chainScope}. Create one first
+                  from the Snap home page or a companion dapp.
+                </Text>
+                <Button name="back">Back</Button>
+              </Box>
+            ),
+          },
+        });
+        return;
+      }
+
+      const from = accounts[0]?.split(':').pop();
+      const txParams = [{
+        from,
+        to: '0xCF806BacAFBbcf09959B1866b5c1479fbEF97e05',
+        value: '0x0',
+        data: '0x',
+      }];
+
+      console.log('KYLAN | test_send_tx_from_insight calling wallet_invokeMethod', JSON.stringify({ txParams }, null, 2));
+      const result = await (snap.request as any)({
+        method: 'wallet_invokeMethod',
+        params: {
+          scope: chainScope,
+          request: {
+            method: 'eth_sendTransaction',
+            params: txParams,
+          },
+        },
+      });
+
+      console.log('KYLAN | test_send_tx_from_insight success', String(result));
+      await snap.request({
+        method: 'snap_updateInterface',
+        params: {
+          id,
+          ui: (
+            <Box>
+              <Heading>TX Sent from Insight!</Heading>
+              <Text>Hash: {String(result)}</Text>
+              <Button name="back">Back</Button>
+            </Box>
+          ),
+        },
+      });
+    } catch (err: any) {
+      console.log('KYLAN | test_send_tx_from_insight failed', { err });
+      await snap.request({
+        method: 'snap_updateInterface',
+        params: {
+          id,
+          ui: (
+            <Box>
+              <Heading>TX from Insight Failed</Heading>
+              <Text>{String(err?.message || err)}</Text>
+              <Button name="back">Back</Button>
+            </Box>
+          ),
+        },
+      });
+    }
   } else if (event.name === 'test_send_tx') {
     const chainScope = `eip155:${chainConfig.chainId}`;
     try {
