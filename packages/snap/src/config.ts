@@ -10,6 +10,7 @@ export type ChainConfig = {
   hasAliasAtomId: string;
   rpcUrl: string;
   hivemindApiUrl: string;
+  multiVaultAddress: string;
 };
 
 export const INTUITION_TESTNET = {
@@ -25,6 +26,7 @@ export const INTUITION_TESTNET = {
   trustworthyAtomId: '0xe9c0e287737685382bd34d51090148935bdb671c98d20180b2fec15bd263f73a',
   hasAliasAtomId: '0xf8cfb4e3f1db08f72f255cf7afaceb4b32684a64dac0f423cdca04dd15cf4fd6',
   hivemindApiUrl: 'https://api.hivemindhq.io',
+  multiVaultAddress: '0x2Ece8D4dEdcB9918A398528f3fa4688b1d2CAB91',
 };
 
 export const INTUITION_MAINNET = {
@@ -40,6 +42,7 @@ export const INTUITION_MAINNET = {
   trustworthyAtomId: '0xe9c0e287737685382bd34d51090148935bdb671c98d20180b2fec15bd263f73a',
   hasAliasAtomId: '0xf8cfb4e3f1db08f72f255cf7afaceb4b32684a64dac0f423cdca04dd15cf4fd6',
   hivemindApiUrl: 'https://api.hivemindhq.io',
+  multiVaultAddress: '0x6E35cF57A41fA15eA0EaE9C33e751b01A784Fe7e',
 };
 
 export const CHAIN_CONFIGS = [INTUITION_TESTNET, INTUITION_MAINNET];

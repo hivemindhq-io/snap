@@ -83,9 +83,6 @@ export const UnifiedFooter = ({
         {showAISummary && (
           <Button name="ai_summary">AI Summary</Button>
         )}
-
-        {/* Experimental: test sending a tx via multichain session from within onTransaction */}
-        <Button name="test_send_tx_from_insight">Test: Send TX via Session</Button>
       </Box>
     </Box>
   );
