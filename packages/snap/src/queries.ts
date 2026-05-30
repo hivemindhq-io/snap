@@ -99,9 +99,9 @@ query TripleWithPositionAggregates($subjectId: String!, $predicateId: String!, $
     creator_id
     counter_term_id
 
-    # Main vault (support) market data
+    # Main vault (support) market data — all curves; aggregate via sumMarketCap.
     term {
-      vaults(where: { curve_id: { _eq: "1" } }) {
+      vaults {
         term_id
         market_cap
         position_count
@@ -109,9 +109,9 @@ query TripleWithPositionAggregates($subjectId: String!, $predicateId: String!, $
       }
     }
 
-    # Counter vault (oppose) market data
+    # Counter vault (oppose) market data — all curves; aggregate via sumMarketCap.
     counter_term {
-      vaults(where: { curve_id: { _eq: "1" } }) {
+      vaults {
         term_id
         market_cap
         position_count
@@ -257,18 +257,20 @@ query OriginTrustTriple($subjectId: String!, $predicateId: String!, $objectId: S
     term_id
 
     term {
-      vaults(where: { curve_id: { _eq: "1" } }) {
+      vaults {
         term_id
         market_cap
         position_count
+        curve_id
       }
     }
 
     counter_term {
-      vaults(where: { curve_id: { _eq: "1" } }) {
+      vaults {
         term_id
         market_cap
         position_count
+        curve_id
       }
     }
 
@@ -301,21 +303,26 @@ query OriginTrustTriple($subjectId: String!, $predicateId: String!, $objectId: S
 
 /**
  * Query to get the user's trusted circle.
- * Returns accounts that the user has staked FOR on trust triples.
- * Minimal data for bandwidth efficiency - only subject_id and label.
+ *
+ * The trust circle is the set of accounts the user *follows*, expressed as
+ * `[I] follow [target]` triples (shared first-person "I" atom as subject,
+ * the `follow` predicate, and the followed account as the object). The user
+ * "follows" an account by holding a FOR position on that triple, so we filter
+ * positions by `account_id` and return each triple's OBJECT (the followed
+ * account).
  *
  * Note: Path is positions → term → triple (not positions → triple directly).
  * The term table is a unified view of both atoms and triples.
  */
 export const getUserTrustedCircleQuery = `
-query UserTrustedCircle($userAddress: String!, $predicateId: String!, $objectId: String!) {
+query UserTrustedCircle($userAddress: String!, $subjectId: String!, $predicateId: String!) {
   positions(
     where: {
       account_id: { _ilike: $userAddress },
       term: {
         triple: {
-          predicate_id: { _eq: $predicateId },
-          object_id: { _eq: $objectId }
+          subject_id: { _eq: $subjectId },
+          predicate_id: { _eq: $predicateId }
         }
       }
     },
@@ -324,8 +331,57 @@ query UserTrustedCircle($userAddress: String!, $predicateId: String!, $objectId:
   ) {
     term {
       triple {
-        subject_id
-        subject {
+        object_id
+        object {
+          label
+          data
+        }
+      }
+    }
+  }
+}
+`;
+
+/**
+ * Query to fetch the viewer's EXTENDED network (2-hop "friend-of-a-friend").
+ *
+ * Given the viewer's direct-follow wallet addresses (`followerAddresses`), this
+ * returns every `[I] follow [G]` position those follows hold — i.e. the accounts
+ * the viewer's follows follow. The position's `account_id` is the BRIDGE: which
+ * direct follow reached each FoaF. Group rows by `object` to derive each FoaF and
+ * its set of bridges.
+ *
+ * Address matching follows the house standard (docs/patterns/GRAPHQL-PATTERNS.md):
+ * `followerAddresses` are EIP-55 checksummed (run through `viem.getAddress()` by
+ * the caller) and matched with `_in` — the indexer stores `account_id`
+ * checksummed, so that is the one canonical form. Never `_ilike` and never a
+ * lowercased address here (`_ilike` is reserved for fuzzy text/label search).
+ *
+ * Deliberately does NOT select `shares` and is NOT ordered by stake: bridge count
+ * (distinct bridges per FoaF) is the only weight in the 2-hop layer. `limit` is a
+ * payload cap only. Seeds are the viewer's follows ONLY — never the whitelist.
+ *
+ * See docs/extended-network-spec.md.
+ */
+export const getExtendedNetworkQuery = `
+query ExtendedNetwork($followerAddresses: [String!]!, $subjectId: String!, $predicateId: String!) {
+  positions(
+    where: {
+      account_id: { _in: $followerAddresses },
+      term: {
+        triple: {
+          subject_id: { _eq: $subjectId },
+          predicate_id: { _eq: $predicateId }
+        }
+      }
+    },
+    limit: 2000
+  ) {
+    account_id
+    term {
+      triple {
+        object_id
+        object {
           label
           data
         }
@@ -407,6 +463,96 @@ query AllClaimsAboutAtom($subjectId: String!, $excludePredicateId: String!, $exc
 }
 `;
 
+/**
+ * Query to fetch safety + provenance triples about a subject atom.
+ *
+ * Returns triples where the subject is the target address atom and the
+ * predicate/object fall into the read surface's safety vocabulary:
+ *  - any `reported for → *` triple (hard lane; classified client-side by object),
+ *  - `has tag → {malicious, suspicious, scammer, bot, impersonation}` (soft lane),
+ *  - any provenance predicate (`created by`, `audited by`, `evaluated by`,
+ *    `same as`) triple (classified client-side by predicate).
+ *
+ * Positions (stakers FOR) and creator_id are returned so the consumer can gate
+ * each claim by the publisher whitelist and the user's trust circle. Object +
+ * predicate labels are returned for attribution/display.
+ *
+ * Variables:
+ *  - subjectId: term_id of the target address atom
+ *  - reportedForId: `reported for` predicate term ID
+ *  - hasTagId: `has tag` predicate term ID
+ *  - softObjectIds: soft-lane object term IDs (filters the hasTag lane)
+ *  - provenancePredicateIds: provenance predicate term IDs
+ */
+export const getSafetyClaimsAboutAtomQuery = `
+query SafetyClaimsAboutAtom(
+  $subjectId: String!,
+  $reportedForId: String!,
+  $hasTagId: String!,
+  $softObjectIds: [String!]!,
+  $provenancePredicateIds: [String!]!
+) {
+  triples(
+    where: {
+      subject_id: { _eq: $subjectId },
+      _or: [
+        { predicate_id: { _eq: $reportedForId } },
+        {
+          _and: [
+            { predicate_id: { _eq: $hasTagId } },
+            { object_id: { _in: $softObjectIds } }
+          ]
+        },
+        { predicate_id: { _in: $provenancePredicateIds } }
+      ]
+    },
+    order_by: { triple_term: { total_market_cap: desc_nulls_last } },
+    limit: 40
+  ) {
+    term_id
+    predicate_id
+    object_id
+    creator_id
+    creator {
+      id
+      label
+    }
+
+    predicate {
+      label
+    }
+    object {
+      label
+      image
+      data
+    }
+
+    triple_term {
+      total_market_cap
+      total_position_count
+    }
+
+    positions(order_by: { shares: desc }, limit: 30) {
+      account_id
+      shares
+      account {
+        id
+        label
+      }
+    }
+
+    counter_positions(order_by: { shares: desc }, limit: 30) {
+      account_id
+      shares
+      account {
+        id
+        label
+      }
+    }
+  }
+}
+`;
+
 export const getListWithHighestStakeQuery = `
   query GetTriplesWithHighestStake($subjectId: String!, $predicateId: String!) {
     triples(
@@ -431,9 +577,9 @@ export const getListWithHighestStakeQuery = `
         total_position_count
       }
 
-      # Individual vault data
+      # Individual vault data — all curves; aggregate via sumMarketCap.
       term {
-        vaults(where: { curve_id: { _eq: "1" } }) {
+        vaults {
           term_id
           market_cap
           position_count
@@ -442,7 +588,7 @@ export const getListWithHighestStakeQuery = `
       }
 
       counter_term {
-        vaults(where: { curve_id: { _eq: "1" } }) {
+        vaults {
           term_id
           market_cap
           position_count

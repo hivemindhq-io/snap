@@ -1,5 +1,6 @@
 import { ChainId } from '@metamask/snaps-sdk';
 import type { TrustedCirclePositions, NetworkFamiliarity } from './trusted-circle/types';
+import type { SafetyData } from './safety/types';
 
 export type Account = {
   id: string;
@@ -161,6 +162,8 @@ type BaseAccountProps = {
   trustedCircle?: TrustedCirclePositions;
   /** Trusted contacts who have ANY claim about this address (de-duped from trustedCircle) */
   networkFamiliarity?: NetworkFamiliarity;
+  /** Classified safety read surface (critical reports, soft flags, provenance) */
+  safety?: SafetyData;
 };
 
 // Discriminated union types for proper AccountProps typing
