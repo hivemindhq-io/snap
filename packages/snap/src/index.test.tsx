@@ -4,7 +4,6 @@
  * This file contains tests for the snap's exported handlers:
  * - onHomePage: Renders the snap's home page (tested below)
  * - onTransaction: Requires network access - test manually in MetaMask Flask
- * - onUserInput: Handles user interactions (currently inert)
  *
  * Note: onTransaction integration tests are not included because the
  * @metamask/snaps-jest framework runs the Snap in an isolated worker
