@@ -1,5 +1,7 @@
 # ENS Handling
 
+> **Address canonicalization (STRICT):** Every Ethereum address is **EIP-55 checksummed** — that is the one canonical form. Extract the address from `data` first (it holds the full checksummed address), fall back to `label`, and run `viem.getAddress()` on any external input. Match in GraphQL with `_eq` (never `_ilike`) and compare in code with `getAddress(a) === getAddress(b)` (never `.toLowerCase()`). Never store, cache, or display a lowercased (non-canonical) address.
+
 > **Purpose**: Critical patterns for handling ENS-resolved atoms. This is one of the most common sources of bugs.
 
 ---
@@ -41,12 +43,12 @@ function extractWalletAddress(subject: { label?: string; data?: string }): strin
   
   // Check data first (where ENS-resolved addresses live)
   if (subject.data && isEvmAddress(subject.data)) {
-    return subject.data.toLowerCase();
+    return getAddress(subject.data);
   }
   
   // Fallback to label for non-ENS atoms
   if (subject.label && isEvmAddress(subject.label)) {
-    return subject.label.toLowerCase();
+    return getAddress(subject.label);
   }
   
   return null;
@@ -67,10 +69,10 @@ function isEvmAddress(value: string | null | undefined): value is string {
 function getWalletFromAtom(atom: { label?: string; data?: string }): string | null {
   // Priority: data (for ENS), then label (for non-ENS)
   if (isEvmAddress(atom.data)) {
-    return atom.data.toLowerCase();
+    return getAddress(atom.data);
   }
   if (isEvmAddress(atom.label)) {
-    return atom.label.toLowerCase();
+    return getAddress(atom.label);
   }
   return null;
 }
@@ -97,27 +99,29 @@ function getDisplayName(atom: { label?: string; data?: string }): string {
 
 ## Usage in Trust Circle
 
+The trust circle is built from `[I] → [follow] → [target]` triples, so the followed account is the triple's **object** (not the subject — that's always the shared `I` atom):
+
 ```typescript
 // Building a map of trusted contacts
 const contactMap = new Map<string, { accountId: string; label: string }>();
 
-for (const position of userTrustPositions) {
-  const subject = position.term.triple.subject;
+for (const position of userFollowPositions) {
+  const object = position.term.triple.object;
   
   // CORRECT: Extract wallet from data first
-  const walletAddress = getWalletFromAtom(subject);
+  const walletAddress = getWalletFromAtom(object);
   
   if (walletAddress) {
-    contactMap.set(walletAddress.toLowerCase(), {
+    contactMap.set(getAddress(walletAddress), {
       accountId: walletAddress,
-      label: subject.label || walletAddress,  // Keep ENS name for display
+      label: object.label || walletAddress,  // Keep ENS name for display
     });
   }
 }
 
 // Later, when matching positions:
 for (const position of targetPositions) {
-  const contact = contactMap.get(position.account_id.toLowerCase());
+  const contact = contactMap.get(getAddress(position.account_id));
   if (contact) {
     // Found a trusted contact who staked!
     console.log(`${contact.label} also staked on this`);
@@ -129,17 +133,17 @@ for (const position of targetPositions) {
 
 ## GraphQL Query Pattern
 
-When querying for trust circle, always fetch both fields:
+When querying for the trust circle, always fetch both fields on the followed account (the triple's `object`):
 
 ```graphql
-query GetTrustCircle($userId: String!) {
+query GetTrustCircle($userId: String!, $iAtomId: String!, $followAtomId: String!) {
   positions(where: {
-    account_id: { _ilike: $userId },
-    term: { triple: { predicate_id: { _eq: $hasTagId }, object_id: { _eq: $trustworthyId } } }
+    account_id: { _eq: $userId },
+    term: { triple: { subject_id: { _eq: $iAtomId }, predicate_id: { _eq: $followAtomId } } }
   }) {
     term {
       triple {
-        subject {
+        object {
           label  # ENS name OR address (for display)
           data   # Wallet address (for matching)
         }
@@ -168,17 +172,18 @@ const address = isEvmAddress(subject.data) ? subject.data : subject.label;
 
 ---
 
-### ❌ Forgetting to Lowercase
+### ❌ Lowercasing Addresses
 
 ```typescript
-// May fail due to checksum differences
-walletA === walletB
+// WRONG — lowercase is non-canonical; never "normalize" an address this way
+walletA.toLowerCase() === walletB.toLowerCase()
 ```
 
-### ✅ Always Normalize
+### ✅ Compare Canonical (Checksummed) Addresses
 
 ```typescript
-walletA.toLowerCase() === walletB.toLowerCase()
+// Indexer data is already EIP-55 checksummed; run getAddress() on any external input
+getAddress(walletA) === getAddress(walletB)
 ```
 
 ---

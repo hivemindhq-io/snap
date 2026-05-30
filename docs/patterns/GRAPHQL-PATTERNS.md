@@ -16,10 +16,10 @@
 
 ## Critical Rules
 
-1. **Use `_ilike` for address matching** — Addresses can be checksummed or lowercase
+1. **Use `_eq` against the EIP-55 checksummed address — never `_ilike` for addresses** — Indexed addresses (`account_id`, `creator_id`, `accounts.id`, address-typed `atoms.data`) are stored EIP-55 checksummed: that is the one canonical form. Run `viem.getAddress()` on every address at the boundary, then match with `_eq` / `_in`. `_ilike` is reserved for fuzzy *text/label* search and must never touch an address. Never store, cache, or display a lowercased (non-canonical) address.
 2. **Navigate through `term`** — Positions don't directly reference atoms/triples
 3. **Add `limit`** — Prevent timeout on large result sets
-4. **Use curve_id `1`** — Default bonding curve
+4. **Aggregate across curves for reads; pin writes to `curve_id = 1`** — Headline aggregates (`market_cap`, position counts) must sum across all curves so curve-2+ positions are not silently dropped. Filtering by `curve_id: { _eq: "1" }` in read queries is a known bug source. Write paths (deposit/redeem) still pin to `curveId = 1n` until the UI supports per-curve staking — see [CONTRACT-PATTERNS.md](./CONTRACT-PATTERNS.md).
 
 ---
 
@@ -29,8 +29,8 @@
 query FindAtomByAddress($address: String!) {
   atoms(where: {
     _or: [
-      { label: { _ilike: $address } },
-      { data: { _ilike: $address } }
+      { data: { _eq: $address } },
+      { label: { _eq: $address } }
     ]
   }) {
     term_id
@@ -42,9 +42,7 @@ query FindAtomByAddress($address: String!) {
 }
 ```
 
-**Why check both?** 
-- Non-ENS atoms: address is in `label`
-- ENS-resolved atoms: address is in `data`, ENS name is in `label`
+**Why `data`, and why `_eq`?** The full EIP-55 checksummed address lives in `data`. `label` is the *display* field — an ENS name (`vitalik.eth`) or a truncated address (`0x920D...42bC`) — so the `label` arm only matches legacy atoms whose label is the full checksummed address. Pass `$address` already checksummed (via `viem.getAddress()`) and match exactly with `_eq`.
 
 ---
 
@@ -60,11 +58,12 @@ query GetTrustTriple($subjectId: String!, $hasTagId: String!, $trustworthyId: St
     term_id
     counter_term_id
     term {
-      vaults(where: { curve_id: { _eq: "1" } }) {
-        market_cap
-        position_count
-        current_share_price
-      }
+      # ✅ DO: aggregate across all curves so curve-2+ positions are counted
+      vaults_aggregate { aggregate { sum { market_cap } } }
+      positions_aggregate(where: { shares: { _gt: "0" } }) { aggregate { count } }
+      # For per-row reads that need a single representative share price,
+      # use the helper `linearVault(vaults)` (see `packages/snap/src/term-stats.ts`)
+      # against the unfiltered `vaults { curve_id, current_share_price, market_cap, position_count }` selection.
     }
     positions(order_by: { shares: desc }, limit: 30) {
       account_id
@@ -77,6 +76,17 @@ query GetTrustTriple($subjectId: String!, $hasTagId: String!, $trustworthyId: St
   }
 }
 ```
+
+```graphql
+# ❌ DON'T: filter vaults by curve_id for headline reads — silently drops
+#          every position staked on curve 2+, producing wrong market caps
+#          and undercounted "stakers" / "positions" numbers.
+term {
+  vaults(where: { curve_id: { _eq: "1" } }) { market_cap, position_count }
+}
+```
+
+> **Note:** `total_market_cap` on `term` is *not* a reliable cross-curve sum for headline displays — at least one mainnet triple has been observed where it diverges from `sum(vaults.market_cap)`. Prefer `vaults_aggregate { aggregate { sum { market_cap } } }` for headlines.
 
 ---
 
@@ -96,12 +106,12 @@ query TripleWithUserPosition($termId: String!, $userAddress: String!) {
     }
     
     # User's specific FOR position
-    user_position: positions(where: { account_id: { _ilike: $userAddress } }) {
+    user_position: positions(where: { account_id: { _eq: $userAddress } }) {
       shares
     }
     
     # User's specific AGAINST position
-    user_counter_position: counter_positions(where: { account_id: { _ilike: $userAddress } }) {
+    user_counter_position: counter_positions(where: { account_id: { _eq: $userAddress } }) {
       shares
     }
   }
@@ -115,7 +125,7 @@ query TripleWithUserPosition($termId: String!, $userAddress: String!) {
 ```graphql
 query GetUserPositions($userId: String!) {
   positions(
-    where: { account_id: { _ilike: $userId } },
+    where: { account_id: { _eq: $userId } },
     order_by: { shares: desc }
   ) {
     term_id
@@ -131,37 +141,53 @@ query GetUserPositions($userId: String!) {
         predicate { label }
         object { label }
       }
-      vaults(where: { curve_id: { _eq: "1" } }) {
+      # ✅ DO: return vaults across all curves; aggregate client-side with
+      #         sumMarketCap / linearVault helpers (see `packages/snap/src/term-stats.ts`).
+      vaults {
+        curve_id
         market_cap
         current_share_price
+        position_count
       }
     }
   }
 }
 ```
 
+```typescript
+// Per-row consumer pattern:
+import { sumMarketCap, sumPositionCount, linearVault } from './term-stats'
+
+const cap = sumMarketCap(position.term?.vaults)
+const count = sumPositionCount(position.term?.vaults)
+const sharePrice = linearVault(position.term?.vaults)?.current_share_price
+
+// ❌ DON'T: vaults[0] indexing — silently drops curve-2+ positions
+const cap = position.term?.vaults?.[0]?.market_cap
+```
+
 ---
 
-## Pattern 5: Get Trust Circle
+## Pattern 5: Get Trust Circle (follow-based)
 
-Find all entities the user has staked FOR on trust triples:
+Find all accounts the user follows — `[I] → [follow] → [target]` triples the user has staked FOR. Match by the **position's** `account_id` (the staker); the followed account is the triple's **object**:
 
 ```graphql
-query GetTrustCircle($userId: String!, $hasTagId: String!, $trustworthyId: String!) {
+query GetTrustCircle($userId: String!, $iAtomId: String!, $followAtomId: String!) {
   positions(where: {
-    account_id: { _ilike: $userId },
+    account_id: { _eq: $userId },
     term: {
       triple: {
-        predicate_id: { _eq: $hasTagId },
-        object_id: { _eq: $trustworthyId }
+        subject_id: { _eq: $iAtomId },
+        predicate_id: { _eq: $followAtomId }
       }
     }
   }) {
     shares
     term {
       triple {
-        subject_id
-        subject { 
+        object_id
+        object { 
           label  # ENS name (for display)
           data   # Wallet address (for matching)
         }
@@ -171,7 +197,9 @@ query GetTrustCircle($userId: String!, $hasTagId: String!, $trustworthyId: Strin
 }
 ```
 
-**⚠️ Important:** Extract wallet address from `subject.data` first, not `subject.label`. See [ENS-HANDLING.md](./ENS-HANDLING.md).
+**⚠️ Important:** The followed account is the triple's `object` (the subject is always the shared `I` atom). Extract the wallet address from `object.data` first, not `object.label`. See [ENS-HANDLING.md](./ENS-HANDLING.md).
+
+> The legacy `[X] → [hasTag] → [trustworthy]` pattern is no longer used to build the circle. `hasTag/trustworthy` is still read to display a target's trustworthiness market (see Pattern 1).
 
 ---
 
@@ -214,10 +242,9 @@ query GetAtomWithTrust($termId: String!, $hasTagId: String!, $trustworthyId: Str
     }) {
       term_id
       term {
-        vaults(where: { curve_id: { _eq: "1" } }) {
-          market_cap
-          position_count
-        }
+        # ✅ DO: aggregate across all curves
+        vaults_aggregate { aggregate { sum { market_cap } } }
+        positions_aggregate(where: { shares: { _gt: "0" } }) { aggregate { count } }
       }
     }
   }
@@ -228,18 +255,18 @@ query GetAtomWithTrust($termId: String!, $hasTagId: String!, $trustworthyId: Str
 
 ## Common Mistakes
 
-### ❌ Case-Sensitive Matching
+### ❌ Lowercase / `_ilike` Address Matching
 
 ```graphql
-# May fail - case sensitive
-atoms(where: { label: { _eq: "0xAbC123..." } })
+# WRONG — non-canonical: lowercases the address and fuzzy-matches it
+atoms(where: { data: { _ilike: "0xabc123..." } })
 ```
 
-### ✅ Case-Insensitive Matching
+### ✅ Checksummed `_eq` Matching
 
 ```graphql
-# Correct - case insensitive
-atoms(where: { label: { _ilike: "0xabc123..." } })
+# CORRECT — exact match on the EIP-55 checksummed value from viem.getAddress()
+atoms(where: { data: { _eq: "0xAbC123..." } })
 ```
 
 ---
@@ -282,6 +309,38 @@ atoms(limit: 50) { term_id label }
 
 ---
 
+### ❌ Filtering Headline Reads by `curve_id = 1`
+
+```graphql
+# WRONG: ignores curve-2+ positions, undercounts market_cap and stakers
+term {
+  vaults(where: { curve_id: { _eq: "1" } }) { market_cap, position_count }
+}
+```
+
+### ✅ Aggregate Across Curves
+
+```graphql
+# CORRECT: sums market cap across all curves; counts all open positions
+term {
+  vaults_aggregate { aggregate { sum { market_cap } } }
+  positions_aggregate(where: { shares: { _gt: "0" } }) { aggregate { count } }
+}
+```
+
+For per-row consumers that already iterate the `vaults[]` array, use the
+`sumMarketCap` / `sumPositionCount` / `linearVault` helpers in
+`packages/snap/src/term-stats.ts` instead of indexing `vaults[0]`.
+
+> **Heads up:** `total_shares` and `current_share_price` are *per-curve* values
+> and are not directly comparable across curves. Don't show them as headline
+> numbers unless you've explicitly picked one curve (e.g. via `linearVault`).
+> `total_market_cap` on `term` has been observed to diverge from the true
+> cross-curve sum on at least one triple — prefer `vaults_aggregate` for
+> headline displays.
+
+---
+
 ## TypeScript Usage
 
 ```typescript
@@ -290,8 +349,8 @@ const result = await graphqlClient.query({
     __args: {
       where: {
         _or: [
-          { label: { _ilike: address } },
-          { data: { _ilike: address } }
+          { data: { _eq: address } },
+          { label: { _eq: address } }
         ]
       }
     },
@@ -313,8 +372,8 @@ const result = await graphqlClient.query({
 | `atoms` | term_id, label, data, image, type |
 | `triples` | term_id, subject_id, predicate_id, object_id, counter_term_id |
 | `positions` | account_id, term_id, shares, curve_id |
-| `terms` | id, type, atom_id, triple_id, total_market_cap |
-| `vaults` | term_id, curve_id, market_cap, current_share_price |
+| `terms` | id, type, atom_id, triple_id, total_market_cap *(not reliably cross-curve; aggregate `vaults.market_cap` for headlines)* |
+| `vaults` | term_id, curve_id, market_cap, current_share_price *(rows are per-curve — sum or pick `linearVault`, don't `vaults[0]`)* |
 
 ### Relationship Navigation
 
