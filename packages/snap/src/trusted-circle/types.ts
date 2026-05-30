@@ -1,8 +1,8 @@
 /**
  * Types for Trusted Circle feature.
  *
- * The trusted circle represents accounts that the current user has staked FOR
- * on trust triples (i.e., accounts they consider trustworthy).
+ * The trusted circle represents the accounts the current user follows — i.e.
+ * accounts they hold a FOR position on in an `[I] follow [account]` triple.
  *
  * @module trusted-circle/types
  */
@@ -27,6 +27,13 @@ export interface CachedTrustedCircle {
   contacts: TrustedContact[];
   /** Timestamp when cache was created (ms since epoch) */
   timestamp: number;
+  /**
+   * Schema version of the cached payload. Bumped whenever the *definition* of
+   * the trust circle changes (e.g. the migration from `[account] has tag →
+   * trustworthy` to `[I] follow [account]`). Entries with a missing/mismatched
+   * version are treated as invalid so stale pre-migration circles self-heal.
+   */
+  version?: number;
 }
 
 /**
@@ -74,6 +81,17 @@ export interface FamiliarContact {
   label: string;
   /** Claims this contact has positions on for the target address */
   claims: ClaimContext[];
+  /**
+   * Degree of separation. 1 = direct follow (trust circle), 2 = friend-of-a-friend.
+   * Absent ⇒ treat as 1 (back-compat with the existing 1-hop familiarity set).
+   */
+  degree?: TrustDegree;
+  /**
+   * For degree-2 only: number of distinct bridges (the viewer's direct follows
+   * that reach this account). Drives the "via N of your follows" copy and the
+   * MIN_BRIDGES gate. Undefined for degree-1.
+   */
+  bridgeCount?: number;
 }
 
 /**
@@ -82,9 +100,75 @@ export interface FamiliarContact {
  * de-duplicated from the trust circle section.
  */
 export interface NetworkFamiliarity {
-  /** Contacts from trust circle with non-trustworthy claims */
+  /** 1-hop contacts (trust circle) with non-trustworthy claims */
   familiarContacts: FamiliarContact[];
   /** Total number of distinct claims about this address (for context) */
   totalClaimsAboutAddress: number;
+  /**
+   * 2-hop (friend-of-a-friend) contacts with non-trustworthy claims, gated by
+   * MIN_BRIDGES. Rendered in a SEPARATE "Extended Network" subsection, never
+   * mixed with `familiarContacts`. Absent/empty ⇒ no 2-hop subsection.
+   */
+  extendedContacts?: FamiliarContact[];
 }
 
+// ────────────────────────────────────────────────────────────────────────────
+// Extended network (2-hop "friend-of-a-friend") — see docs/extended-network-spec.md
+//
+// The extended network is the union of `[F] follow [G]` edges for every direct
+// follow `F` in the viewer's OWN 1-hop circle, minus the viewer and minus the
+// 1-hop set. Seeds are the viewer's follows only (never the whitelist). Stake is
+// never read; bridge count (number of distinct direct follows that reach a FoaF)
+// is the only weight. Renders in its own section, gated by MIN_BRIDGES.
+// ────────────────────────────────────────────────────────────────────────────
+
+/** Degree of separation from the viewer. 1 = direct follow, 2 = friend-of-a-friend. */
+export type TrustDegree = 1 | 2;
+
+/**
+ * A 2-hop contact: an account followed by one or more of the viewer's direct
+ * follows, but NOT followed by the viewer directly (and not the viewer).
+ */
+export interface ExtendedContact {
+  /** The FoaF's wallet address */
+  accountId: string;
+  /** Display label (ENS name or truncated hex address) */
+  label: string;
+  /**
+   * Lowercased addresses of the direct follows who bridge to this account.
+   * `via.length` is the bridge count — the only trust weight for degree 2.
+   */
+  via: string[];
+}
+
+/** Resolved 2-hop layer for a viewer (excludes self + all direct follows). */
+export interface ExtendedNetwork {
+  /** FoaF contacts, sorted by bridge count (via.length) desc. */
+  contacts: ExtendedContact[];
+}
+
+/**
+ * Cached extended network with TTL + schema version, tied to the 1-hop
+ * timestamp it was derived from so it self-invalidates when the seed set
+ * (the 1-hop circle) changes.
+ */
+export interface CachedExtendedNetwork {
+  contacts: ExtendedContact[];
+  /** When this extended set was computed (ms since epoch). */
+  timestamp: number;
+  /**
+   * The 1-hop cache `timestamp` this set was derived from. If the 1-hop circle
+   * is refreshed (different timestamp), this extended entry is treated as stale.
+   */
+  derivedFrom: number;
+  /** Bumped when the *definition* of the extended layer changes. */
+  version?: number;
+}
+
+/**
+ * State structure for extended-network cache, stored via snap_manageState under
+ * a key prefix separate from the 1-hop circle. Keyed by lowercased user address.
+ */
+export interface ExtendedNetworkState {
+  [userAddress: string]: CachedExtendedNetwork;
+}

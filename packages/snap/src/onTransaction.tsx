@@ -2,7 +2,6 @@ import type {
   ChainId,
   OnTransactionHandler,
   Transaction,
-  Json,
 } from '@metamask/snaps-sdk';
 import { Box } from '@metamask/snaps-sdk/jsx';
 
@@ -14,40 +13,23 @@ import {
   OriginType,
   OriginProps,
 } from './types';
-import { UnifiedFooter } from './components';
+import { UnifiedFooter, renderSafetyInsight, renderNetworkInsight } from './components';
 import {
   getTrustedCircle,
   getTrustedContactsWithPositions,
   enrichContactLabels,
   getNetworkFamiliarity,
+  getExtendedNetwork,
+  indexExtendedNetwork,
   TrustedCirclePositions,
   NetworkFamiliarity,
 } from './trusted-circle';
-import { getFeatureConfig, getNativeBalance } from './feature-config';
-import type { FeatureConfig } from './feature-config';
+import { EXTENDED_NETWORK_ENABLED } from './config';
+import { getClaimTemplates } from './claim-templates';
+import { getPublisherWhitelist } from './publisher-whitelist';
+import { getSafetyData } from './safety';
+import type { SafetyData } from './safety';
 import { shouldSuppressOrigin } from './util';
-
-/** Combined context for both account and origin data */
-type TransactionContext = {
-  account: AccountProps;
-  origin: OriginProps;
-  featureConfig: FeatureConfig;
-  /** Whether the user passed all AI gating checks at render time */
-  aiAllowed: boolean;
-};
-
-/**
- * Converts props to a JSON-serializable context object.
- * MetaMask Snap context must be Record<string, Json> which doesn't allow undefined.
- * This function converts undefined values to null for JSON compatibility.
- */
-const toSerializableContext = (context: TransactionContext): Record<string, Json> => {
-  // JSON.parse(JSON.stringify()) handles the conversion cleanly:
-  // - undefined values are stripped from objects
-  // - null remains null
-  // - All other values are preserved
-  return JSON.parse(JSON.stringify(context)) as Record<string, Json>;
-};
 
 export const onTransaction: OnTransactionHandler = async ({
   transaction,
@@ -62,25 +44,35 @@ export const onTransaction: OnTransactionHandler = async ({
   // "to" ENS addresses arrive here as EVM addresses, EVM addresses arrive as EVM addresses
   const userAddress: string | undefined = transaction.from;
 
-  const [accountData, originData, trustedCircle, featureConfig] = await Promise.all([
+  const [
+    accountData,
+    originData,
+    trustedCircle,
+    claimTemplates,
+    publisherWhitelist,
+  ] = await Promise.all([
     getAccountData(transaction, chainId, userAddress),
     getOriginData(transactionOrigin, userAddress),
     userAddress ? getTrustedCircle(userAddress) : Promise.resolve([]),
-    getFeatureConfig(),
+    // Claim-template registry: predicate/object term IDs the safety read
+    // surface resolves against. Falls back to chainConfig constants internally.
+    getClaimTemplates(),
+    // Publisher whitelist: authority accounts whose hard reports surface
+    // globally. Falls back to an empty whitelist internally.
+    getPublisherWhitelist(),
   ]);
-
-  // Determine if AI features pass all gating checks
-  let aiAllowed = featureConfig.ai.enabled;
-  if (aiAllowed && userAddress) {
-    const minBalance = BigInt(featureConfig.ai.gating.minNativeBalance || '0');
-    if (minBalance > 0n) {
-      const balance = await getNativeBalance(userAddress);
-      aiAllowed = balance >= minBalance;
-    }
-  }
 
   const accountType = getAccountType(accountData);
   const originType = getOriginType(originData, transactionOrigin);
+
+  // Derive the 2-hop "extended network" off the resolved 1-hop circle (cached;
+  // one batched round-trip on cold start, ~0 in steady state). Seeds are the
+  // viewer's follows ONLY — never the whitelist. Gated by EXTENDED_NETWORK_ENABLED.
+  const extendedNetwork =
+    EXTENDED_NETWORK_ENABLED && userAddress && trustedCircle.length > 0
+      ? await getExtendedNetwork(userAddress, trustedCircle)
+      : { contacts: [] };
+  const extendedIndex = indexExtendedNetwork(extendedNetwork);
 
   // Calculate trusted circle positions for account trust triple
   let accountTrustedCircle: TrustedCirclePositions | undefined;
@@ -125,7 +117,23 @@ export const onTransaction: OnTransactionHandler = async ({
       trustedCircle,
       alreadyDisplayedIds,
       userAddress,
+      EXTENDED_NETWORK_ENABLED ? extendedIndex : undefined,
     );
+  }
+
+  // Compute the safety read surface (critical reports, soft flags, provenance).
+  // Resolves predicate/object term IDs from the claim-template registry and
+  // gates signals by the publisher whitelist + the user's trust circle.
+  let accountSafety: SafetyData | undefined;
+  if (accountData.account) {
+    accountSafety = await getSafetyData(accountData.account.term_id, {
+      registry: claimTemplates,
+      trustedCircle,
+      whitelist: publisherWhitelist,
+      userAddress,
+      isContract: accountData.isContract,
+      extendedIndex: EXTENDED_NETWORK_ENABLED ? extendedIndex : undefined,
+    });
   }
 
   // Calculate trusted circle positions for origin trust triple
@@ -161,6 +169,7 @@ export const onTransaction: OnTransactionHandler = async ({
     transactionOrigin,
     trustedCircle: accountTrustedCircle,
     networkFamiliarity: accountNetworkFamiliarity,
+    safety: accountSafety,
   } as AccountProps; // Type assertion needed due to the discriminated union
 
   // Create origin props
@@ -171,8 +180,22 @@ export const onTransaction: OnTransactionHandler = async ({
     trustedCircle: originTrustedCircle,
   } as OriginProps; // Type assertion needed due to the discriminated union
 
+  // Render the safety read surface (critical reports, soft flags, provenance).
+  // Rendered ABOVE the existing insight sections so safety overrides reputation.
+  const safetyUI = renderSafetyInsight(accountSafety);
+
+  // Render the standalone "Your network" surface: 1-hop "Also Familiar" plus a
+  // SEPARATE degree-2 "Extended Network" subsection. The legacy account card
+  // that used to host familiarity is hidden, so this is its visible home.
+  const networkUI = renderNetworkInsight(accountNetworkFamiliarity);
+
   // Render both account and origin insights (information sections only)
-  const accountUI = renderOnTransaction(accountProps);
+  // LEGACY-HIDDEN (Destination card): the account/destination insight (address,
+  // positions, market cap, trust stats) is legacy. We're shifting focus to WHO
+  // made claims rather than position/market-cap specifics. Hidden for now.
+  // To restore: `const accountUI = renderOnTransaction(accountProps);`
+  const accountUI = null;
+  void renderOnTransaction; // retained import; remove this once we delete the card for good
   let originUI = null;
   if (!shouldSuppressOrigin(originProps?.originUrl, originProps?.hostname)) {
     originUI = renderOriginInsight(originProps);
@@ -183,36 +206,24 @@ export const onTransaction: OnTransactionHandler = async ({
     <UnifiedFooter
       accountProps={accountProps}
       originProps={originProps}
-      featureConfig={featureConfig}
-      aiAllowed={aiAllowed}
     />
   );
 
-  // Combine into final UI: info sections first, then all CTAs at bottom
+  // Combine into final UI: safety surface first (above all existing elements),
+  // then info sections, then all CTAs at bottom.
   const initialUI = (
     <Box>
+      {safetyUI}
+      {networkUI}
       {accountUI}
       {originUI}
       {footerUI}
     </Box>
   );
 
-  // Convert props to JSON-serializable context (strips undefined values)
-  const context = toSerializableContext({
-    account: accountProps,
-    origin: originProps,
-    featureConfig,
-    aiAllowed,
-  });
-
-  const interfaceId = await snap.request({
-    method: 'snap_createInterface',
-    params: {
-      ui: initialUI,
-      context,
-    },
-  });
+  // The transaction insight has no interactive elements, so we return the
+  // content directly instead of creating a managed interface.
   return {
-    id: interfaceId,
+    content: initialUI,
   };
 };

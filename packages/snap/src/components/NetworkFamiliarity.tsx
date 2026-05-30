@@ -10,7 +10,7 @@
  * @module components/NetworkFamiliarity
  */
 
-import { Row, Text, Heading, Section, Bold } from '@metamask/snaps-sdk/jsx';
+import { Box, Row, Text, Heading, Section, Bold } from '@metamask/snaps-sdk/jsx';
 import type { FamiliarContact, NetworkFamiliarity } from '../trusted-circle/types';
 
 const MAX_DISPLAY_CONTACTS = 3;
@@ -101,5 +101,83 @@ export const NetworkFamiliaritySection = ({
         <Text color="muted">{`+${remaining} more from your network`}</Text>
       )}
     </Section>
+  );
+};
+
+/**
+ * Displays degree-2 (friend-of-a-friend) contacts who have made claims about the
+ * target address. Rendered as a SEPARATE section below the 1-hop "Also Familiar"
+ * block — never mixed with direct follows. Each contact shows how many of the
+ * viewer's follows bridge to it ("via N of your follows").
+ *
+ * Hidden when there are no extended contacts (returns null).
+ */
+const ExtendedFamiliaritySection = ({
+  contacts,
+}: {
+  contacts: FamiliarContact[];
+}) => {
+  if (contacts.length === 0) {
+    return null;
+  }
+
+  const displayContacts = contacts.slice(0, MAX_DISPLAY_CONTACTS);
+  const remaining = contacts.length - MAX_DISPLAY_CONTACTS;
+
+  return (
+    <Section>
+      <Heading size="sm">Extended Network</Heading>
+
+      {displayContacts.map((contact) => (
+        <Row label={formatLabel(contact.label)}>
+          <Text color="muted">
+            {`${formatClaimSummary(contact)} · via ${contact.bridgeCount ?? 0} of your follows`}
+          </Text>
+        </Row>
+      ))}
+
+      {remaining > 0 && (
+        <Text color="muted">{`+${remaining} more in your extended network`}</Text>
+      )}
+    </Section>
+  );
+};
+
+/**
+ * Renders the standalone "Your network" insight: the 1-hop "Also Familiar"
+ * block plus a separate degree-2 "Extended Network" subsection. Returns null
+ * when there is nothing in either tier.
+ *
+ * Rendered directly in `onTransaction` (the legacy account/Destination card that
+ * used to host familiarity is hidden), so this is the visible home for the
+ * "WHO in your network knows this address" surface.
+ *
+ * @param networkFamiliarity - Aggregated 1-hop + 2-hop familiarity data
+ * @returns JSX element or null
+ */
+export const renderNetworkInsight = (
+  networkFamiliarity: NetworkFamiliarity | undefined,
+) => {
+  if (!networkFamiliarity) {
+    return null;
+  }
+
+  const { familiarContacts, extendedContacts } = networkFamiliarity;
+  const hasOneHop = familiarContacts.length > 0;
+  const hasTwoHop = (extendedContacts?.length ?? 0) > 0;
+
+  if (!hasOneHop && !hasTwoHop) {
+    return null;
+  }
+
+  return (
+    <Box>
+      {hasOneHop ? (
+        <NetworkFamiliaritySection networkFamiliarity={networkFamiliarity} />
+      ) : null}
+      {hasTwoHop && extendedContacts ? (
+        <ExtendedFamiliaritySection contacts={extendedContacts} />
+      ) : null}
+    </Box>
   );
 };
