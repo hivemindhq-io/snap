@@ -100,9 +100,12 @@ export const INTUITION_MAINNET = {
   chainIdHex: '0x483',
   chainName: 'Intuition Mainnet',
   currencySymbol: 'TRUST',
-  hasTagAtomId: '0x6de69cc0ae3efe4000279b1bf365065096c8715d8180bc2a98046ee07d3356fd',
+  hasTagAtomId: '0x7ec36d201c842dc787b45cb5bb753bea4cf849be3908fb1b0a7d067c3c3cc1f5',
   trustworthyAtomId: '0xe9c0e287737685382bd34d51090148935bdb671c98d20180b2fec15bd263f73a',
   hasAliasAtomId: '0xf8cfb4e3f1db08f72f255cf7afaceb4b32684a64dac0f423cdca04dd15cf4fd6',
+  // Trust circle is built from [I] -> [follow] -> [target] triples:
+  followAtomId: '0xffd07650dc7ab341184362461ebf52144bf8bcac5a19ef714571de15f1319260',
+  iAtomId: '0x7ab197b346d386cd5926dbfeeb85dade42f113c7ed99ff2046a5123bb5cd016b',
 };
 ```
 
@@ -170,10 +173,10 @@ query TripleWithUserPosition($termId: String!, $userAddress: String!) {
     positions(order_by: { shares: desc }, limit: 30) { ... }
     
     # User's specific position (using GraphQL aliases)
-    user_position: positions(where: { account_id: { _ilike: $userAddress } }) {
+    user_position: positions(where: { account_id: { _eq: $userAddress } }) {
       shares
     }
-    user_counter_position: counter_positions(where: { account_id: { _ilike: $userAddress } }) {
+    user_counter_position: counter_positions(where: { account_id: { _eq: $userAddress } }) {
       shares
     }
   }
@@ -214,11 +217,13 @@ function calculateGini(values: number[]): number {
 See [../patterns/TRUST-CIRCLE.md](../patterns/TRUST-CIRCLE.md) for full implementation.
 
 Key points for Snap:
-1. Get user's trust circle using `transaction.from`
-2. Extract wallet addresses from `subject.data` (ENS handling)
-3. Match against destination's position holders
+1. Get the user's follow circle using `transaction.from` — positions on `[I] → [follow] → [target]` triples
+2. Extract wallet addresses from each triple's `object.data` (the followed account; ENS handling)
+3. Match against the destination's position holders
 4. Sort by stake amount (highest first)
 5. Display with names from pre-resolved atom labels
+
+> The circle is built from the canonical `[I] → [follow] → [target]` pattern (migrated 2026-05-30), not the legacy `[X] → [hasTag] → [trustworthy]`.
 
 ---
 
