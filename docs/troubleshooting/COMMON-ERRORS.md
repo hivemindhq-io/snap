@@ -127,15 +127,15 @@ positions(where: { term: { triple: { ... } } })
 
 **Symptom:** Query returns empty when data exists.
 
-**Cause:** Case-sensitive address matching.
+**Cause:** Querying with a non-canonical (lowercased) address, or `_ilike`-matching a fragmented non-checksummed row instead of the canonical one.
 
-**Solution:** Use `_ilike` for case-insensitive:
+**Solution:** Checksum the address with `viem.getAddress()` and match exactly with `_eq`:
 ```graphql
-# ❌ WRONG
-atoms(where: { label: { _eq: "0xAbC..." } })
+# ❌ WRONG — lowercased + fuzzy match (non-canonical)
+atoms(where: { data: { _ilike: "0xabc..." } })
 
-# ✅ CORRECT
-atoms(where: { label: { _ilike: "0xabc..." } })
+# ✅ CORRECT — exact match on the EIP-55 checksummed value
+atoms(where: { data: { _eq: "0xAbC..." } })
 ```
 
 ---
@@ -163,16 +163,20 @@ await queryClient.invalidateQueries({ queryKey: ['positions', termId] });
 
 **Symptom:** Trust circle shows no overlap when it should.
 
-**Cause:** Using `label` instead of `data` for ENS-resolved atoms.
+**Cause:** Using `label` instead of `data` for ENS-resolved atoms — or reading the
+followed account from the triple's `subject` instead of its `object`. The trust circle is
+built from `[I] → [follow] → [target]` triples, so the followed account is the `object`
+(the subject is always the shared `I` atom).
 
 **Solution:**
 ```typescript
-// ❌ WRONG
-const address = subject.label;  // "vitalik.eth" - not an address!
+// ❌ WRONG — followed account is the object, not the subject
+const address = position.term.triple.subject.label;  // "vitalik.eth" - not an address!
 
 // ✅ CORRECT
+const object = position.term.triple.object;
 const isEvmAddress = (v: string) => /^0x[a-fA-F0-9]{40}$/i.test(v);
-const address = isEvmAddress(subject.data) ? subject.data : subject.label;
+const address = isEvmAddress(object.data) ? object.data : object.label;
 ```
 
 See [../patterns/ENS-HANDLING.md](../patterns/ENS-HANDLING.md) for full pattern.
@@ -343,7 +347,7 @@ await snap.request({
 
 **Solution:** 
 1. Check what type of ID you need
-2. Normalize to lowercase before comparing
+2. Compare canonical (EIP-55 checksummed) forms — `getAddress(a) === getAddress(b)`, never lowercase
 3. Use correct field for the context
 
 ---

@@ -131,7 +131,6 @@ The `onTransaction` handler requires network access to the Intuition GraphQL API
 src/
 ├── index.tsx           # Entry point, exports handlers
 ├── onTransaction.tsx   # Transaction insight handler
-├── onUserInput.tsx     # User interaction handler
 ├── account.tsx         # Account (destination) data fetching
 ├── origin.tsx          # dApp origin data fetching
 ├── distribution.ts     # Stake distribution analysis

@@ -242,7 +242,7 @@ pnpm dev          # Start dev server (usually port 5173)
 
 1. **Indexer delay**: After transactions, wait 4-10 seconds before querying
 2. **IPFS images**: Must convert `ipfs://` URLs to gateway URLs
-3. **Address matching**: Use `_ilike` in GraphQL, normalize to lowercase
+3. **Address matching**: Use `_eq` on the EIP-55 checksummed address (via `viem.getAddress()`) — never `_ilike`, never lowercase
 4. **Chain switching**: Always check chain before transactions
 
 ---

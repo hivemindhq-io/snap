@@ -151,11 +151,11 @@ A **vault** is an economic container holding staked TRUST tokens.
 | Property | Description |
 |----------|-------------|
 | `term_id` | The atom or triple this vault is for |
-| `curve_id` | Bonding curve formula (usually `1`) |
-| `total_shares` | Total shares issued |
-| `current_share_price` | Current price per share |
-| `market_cap` | Total value locked |
-| `position_count` | Number of unique stakers |
+| `curve_id` | Bonding curve formula. `1` is the default *write* target; multiple curves can exist per term, so reads must aggregate across them |
+| `total_shares` | Total shares issued *(per curve — not cross-curve comparable)* |
+| `current_share_price` | Current price per share *(per curve — pick the linear vault for representative display)* |
+| `market_cap` | Total value locked *(per curve — sum across rows for a term-level headline)* |
+| `position_count` | Open positions *(per curve — sum across rows for a term-level total)* |
 
 ### Bonding Curve
 
@@ -168,7 +168,17 @@ Early stakers get more shares per TRUST. Later stakers pay higher prices.
 
 ### Default Curve
 
-Use `curve_id = 1` (linear curve) unless specified otherwise.
+The linear curve (`curve_id = 1`) is the default **write** target for the
+current UI — `deposit` / `redeem` calls pin `curveId = 1n` until the UI
+supports per-curve staking.
+
+**Reads must aggregate across all curves.** A single term can have multiple
+vault rows (one per curve), and any user can stake on any curve. Filtering
+reads by `curve_id = 1` silently drops every curve-2+ position and produces
+incorrect market caps and staker counts. Use `vaults_aggregate` for headlines
+and the `term-stats` helpers for per-row consumers. See
+[../patterns/GRAPHQL-PATTERNS.md](../patterns/GRAPHQL-PATTERNS.md) and
+[../patterns/CONTRACT-PATTERNS.md](../patterns/CONTRACT-PATTERNS.md).
 
 ---
 
@@ -182,7 +192,7 @@ A **position** represents a user's stake in a vault.
 |-------|-------------|
 | `account_id` | User's wallet address |
 | `term_id` | The vault (atom or triple term) |
-| `curve_id` | Bonding curve ID (usually `1`) |
+| `curve_id` | Bonding curve ID. Writes target `1` today; positions on curves > 1 exist in the wild and must be counted by reads |
 | `shares` | Number of shares owned |
 
 ### Calculating Value
@@ -222,7 +232,7 @@ These are always true in the Intuition protocol:
 1. `term_id` is deterministic: same data → same term_id
 2. Every triple has exactly one `counter_term_id` (never null)
 3. Positions are always associated with terms, never directly with atoms/triples
-4. `curve_id = 1` is the default bonding curve
+4. `curve_id = 1` is the default **write** target; reads must aggregate across all curves
 5. All monetary values are in wei (18 decimals)
 6. Shares are stored as bigint (string in GraphQL responses)
 

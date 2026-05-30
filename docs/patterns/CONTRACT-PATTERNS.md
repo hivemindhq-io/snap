@@ -9,7 +9,10 @@
 **Package:** `@0xintuition/protocol`
 
 **Default Values:**
-- `curve_id`: `1n` (bigint)
+- `curve_id`: `1n` (bigint) — **write default only**. The UI does not yet
+  support per-curve staking, so `deposit` and `redeem` pin `curveId = 1n`
+  intentionally. **Read** queries must aggregate across all curves; see
+  [GRAPHQL-PATTERNS.md](./GRAPHQL-PATTERNS.md) Critical Rule #4.
 - Slippage: 1% — `(preview * 99n) / 100n`
 
 ---
@@ -114,7 +117,7 @@ import { multiVaultDeposit, multiVaultPreviewDeposit } from '@0xintuition/protoc
 // 1. Preview to get expected shares
 const preview = await multiVaultPreviewDeposit(publicClient, {
   address: contractAddress,
-  args: [depositAmount, termId, 1n],  // curve_id = 1
+  args: [depositAmount, termId, 1n],  // curve_id = 1 (write default — see Prerequisites)
 });
 
 // 2. Calculate minimum shares with slippage

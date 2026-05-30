@@ -834,11 +834,11 @@ query TripleWithUserPosition($subjectId: String!, $predicateId: String!, $object
     counter_positions(order_by: { shares: desc }, limit: 30) { ... }
     
     # User's specific position (using GraphQL aliases - no extra query needed)
-    user_position: positions(where: { account_id: { _ilike: $userAddress } }) {
+    user_position: positions(where: { account_id: { _eq: $userAddress } }) {
       account_id
       shares
     }
-    user_counter_position: counter_positions(where: { account_id: { _ilike: $userAddress } }) {
+    user_counter_position: counter_positions(where: { account_id: { _eq: $userAddress } }) {
       account_id
       shares
     }
@@ -850,16 +850,18 @@ If the user has previously staked FOR or AGAINST, the `UserPositionSection` comp
 
 #### Trust Circle Feature
 
-The trust circle (renamed from "Trusted Contacts") shows when someone you trust has also staked on the destination:
+> **Pattern note:** The Snap builds the user's trust circle from `[I] → [follow] → [target]` triples (the canonical Hive Mind pattern, shared with the browser extension and explorer). A user "follows" an account by holding a FOR position on `[I] → [follow] → [their address]`; the circle is the set of **objects** of those triples. The legacy `[X] → [hasTag] → [trustworthy]` pattern is no longer used to build the circle. Per-topic trust circles and topical curatorship are **not** part of the active pattern in any Hive Mind product.
 
-1. **Fetch user's trust circle**: Query positions where user staked FOR on trust triples
-2. **Fetch destination's trust triple**: Get all positions on the destination's trustworthiness claim
-3. **Cross-reference**: Find overlap between trusted contacts and position holders
-4. **Display**: Show which trusted contacts have staked FOR or AGAINST, sorted by stake amount (highest first)
+The trust circle (renamed from "Trusted Contacts") shows when someone you follow has also staked on the destination:
+
+1. **Fetch user's follow circle**: Query positions where the user staked FOR on `[I] → [follow] → [target]` triples; the followed account is each triple's object
+2. **Fetch destination's trust triple**: Get all positions on the destination's trustworthiness claim (`[address] → [hasTag] → [trustworthy]`)
+3. **Cross-reference**: Find overlap between followed accounts and position holders
+4. **Display**: Show which followed accounts have staked FOR or AGAINST, sorted by stake amount (highest first)
 
 Contacts display their ENS name or Intuition alias (if available) via pre-resolved atom labels.
 
-This provides social proof—"people you trust also trust this address."
+This provides social proof—"people you follow also trust this address."
 
 ---
 
@@ -1293,25 +1295,27 @@ function calculateNakamoto(values: number[]): number {
 
 ### Trust Circle
 
-The trust circle feature (UI displays "Your Trust Circle") shows when people you trust have also staked on an entity.
+The trust circle feature (UI displays "Your Trust Circle") shows when people you follow have also staked on an entity.
+
+> **Canonical pattern:** Hive Mind's canonical trust circle pattern is `[I] → [follow] → [target]` (browser extension + explorer), and the Intuition Snap now uses it too (migrated 2026-05-30). The legacy `[X] → [hasTag] → [trustworthy]` pattern is no longer used to build the circle. Per-topic trust circles and topical curatorship are **not** part of the active pattern in any Hive Mind product.
 
 #### How It Works
 
-1. **Build trust circle**: Find all entities where the user has staked FOR on trust triples
+1. **Build follow circle**: Find all follow triples where the user has staked FOR. Match by the **position's** `account_id` (the staker), read the followed account from `triple.object`:
    ```graphql
    positions(where: {
-       account_id: { _ilike: $userAddress },
+       account_id: { _eq: $userAddress },
        term: {
            triple: {
-               predicate_id: { _eq: $hasTagAtomId },
-               object_id: { _eq: $trustworthyAtomId }
+               subject_id: { _eq: $iAtomId },
+               predicate_id: { _eq: $followAtomId }
            }
        }
    }) {
      term {
        triple {
-         subject_id
-         subject {
+         object_id
+         object {
            label  # May contain ENS name
            data   # Contains EVM address for ENS-resolved atoms
          }
@@ -1320,9 +1324,11 @@ The trust circle feature (UI displays "Your Trust Circle") shows when people you
    }
    ```
 
-2. **Get destination positions**: Find all stakers on the destination's trust triple
+   The subject is always the shared `I` atom; the staker is identified by the position's `account_id`, and the followed account is the triple's `object`.
 
-3. **Cross-reference**: Find overlap between trusted contacts and position holders
+2. **Get destination positions**: Find all stakers on the destination's trust triple (`[address] → [hasTag] → [trustworthy]`)
+
+3. **Cross-reference**: Find overlap between followed accounts and position holders
 
 4. **Display**: Show "Your Trust Circle" with contacts sorted by stake amount (highest first)
 
@@ -1347,7 +1353,7 @@ const walletAddress = isEvmAddress(subject.data)
     ? subject.label
     : null;
 
-contactMap.set(walletAddress.toLowerCase(), {
+contactMap.set(getAddress(walletAddress), {
     accountId: walletAddress,
     label: subject.label || walletAddress, // Keep ENS name for display
 });
@@ -1372,8 +1378,8 @@ const atoms = await graphqlClient.query({
         __args: {
             where: {
                 _or: [
-                    { label: { _ilike: address } },
-                    { data: { _ilike: address } }
+                    { label: { _eq: address } },
+                    { data: { _eq: address } }
                 ]
             }
         },
@@ -1667,8 +1673,10 @@ Multiple indexers should produce identical state:
 | **Bonding curve** | Algorithmic pricing mechanism for vault shares |
 | **Gini coefficient** | Measure of inequality (0 = equal, 1 = unequal) |
 | **Nakamoto coefficient** | Minimum entities needed to control 51% |
-| **Trusted circle** | Accounts the user has staked FOR on trust triples |
-| **hasTag** | Common predicate for tagging (e.g., "X has tag trustworthy") |
+| **Trust Circle** | The accounts a user follows — i.e. those they hold a FOR position on in an `[I] → [follow] → [account]` triple. Canonical pattern across Hive Mind (extension, explorer, and Snap as of 2026-05-30). Per-topic / topical curator trust circles are **not** part of the active pattern in any Hive Mind product. |
+| **I atom** | Universal self-referential subject atom; fixed subject of every `[I] → [follow] → [target]` triple |
+| **follow atom** | Predicate atom used to build the viewer's trust circle (Schema.org `FollowAction`) — canonical Hive Mind pattern |
+| **hasTag** | Common predicate for tagging (e.g., "X has tag trustworthy"); used to display a target's trustworthiness market, **not** to build the viewer's trust circle |
 | **hasAlias** | Predicate for associating alternative names |
 | **CAIP-10** | Chain Agnostic Improvement Proposal for address formatting |
 
@@ -1685,7 +1693,9 @@ Multiple indexers should produce identical state:
 
 | Name | term_id |
 |------|---------|
-| hasTag | `0x6de69cc0ae3efe4000279b1bf365065096c8715d8180bc2a98046ee07d3356fd` |
+| I | `0x7ab197b346d386cd5926dbfeeb85dade42f113c7ed99ff2046a5123bb5cd016b` |
+| follow | `0xffd07650dc7ab341184362461ebf52144bf8bcac5a19ef714571de15f1319260` |
+| hasTag | `0x7ec36d201c842dc787b45cb5bb753bea4cf849be3908fb1b0a7d067c3c3cc1f5` |
 | trustworthy | `0xe9c0e287737685382bd34d51090148935bdb671c98d20180b2fec15bd263f73a` |
 | hasAlias | `0xf8cfb4e3f1db08f72f255cf7afaceb4b32684a64dac0f423cdca04dd15cf4fd6` |
 
@@ -1812,7 +1822,7 @@ query GetAtomWithTrust($termId: String!, $hasTagId: String!, $trustworthyId: Str
 **Get user's positions:**
 ```graphql
 query GetUserPositions($userId: String!) {
-    positions(where: { account_id: { _ilike: $userId } }) {
+    positions(where: { account_id: { _eq: $userId } }) {
         term_id
         shares
         term {
@@ -1832,23 +1842,23 @@ query GetUserPositions($userId: String!) {
 }
 ```
 
-**Get trust circle:**
+**Get trust circle (follow-based):**
 ```graphql
-query GetTrustCircle($userId: String!, $hasTagId: String!, $trustworthyId: String!) {
+query GetTrustCircle($userId: String!, $iAtomId: String!, $followAtomId: String!) {
     positions(where: {
-        account_id: { _ilike: $userId },
+        account_id: { _eq: $userId },
         term: {
             triple: {
-                predicate_id: { _eq: $hasTagId },
-                object_id: { _eq: $trustworthyId }
+                subject_id: { _eq: $iAtomId },
+                predicate_id: { _eq: $followAtomId }
             }
         }
     }, order_by: { shares: desc }) {
         shares
         term {
             triple {
-                subject_id
-                subject { 
+                object_id
+                object { 
                     label  # ENS name or address
                     data   # EVM address for ENS-resolved atoms
                 }
@@ -1858,7 +1868,7 @@ query GetTrustCircle($userId: String!, $hasTagId: String!, $trustworthyId: Strin
 }
 ```
 
-**Note**: For ENS-resolved atoms, extract the wallet address from `subject.data`, not `subject.label`. The label contains the ENS name for display purposes.
+**Note**: The followed account is the triple's **object**. For ENS-resolved atoms, extract the wallet address from `object.data`, not `object.label`. The label contains the ENS name for display purposes.
 
 ---
 
@@ -1868,6 +1878,7 @@ query GetTrustCircle($userId: String!, $hasTagId: String!, $trustworthyId: Strin
 |---------|------|--------|---------|
 | 1.0 | 2026-01-19 | AI-assisted | Initial comprehensive documentation |
 | 1.1 | 2026-01-20 | AI-assisted | Added "Your Position" feature documentation; Fixed ENS address extraction patterns for trust circle; Updated `transaction.from` as primary user address source; Renamed "Trusted Contacts" to "Trust Circle"; Added stake-based sorting and label enrichment |
+| 1.2 | 2026-05-30 | AI-assisted | Migrated the Snap's trust circle from `[X] → [hasTag] → [trustworthy]` to the canonical `[I] → [follow] → [target]` follow pattern (matching extension + explorer); updated trust-circle algorithm, glossary, and query examples |
 
 ---
 
@@ -2230,19 +2241,19 @@ positions(where: {
 
 **Solution**: Always check the schema. Positions relate to terms, and terms can be atoms or triples.
 
-#### Problem: Case-Sensitive Matching
+#### Problem: Querying With a Non-Canonical Address
 
-Ethereum addresses can be checksummed (mixed case) or lowercase:
+Indexed addresses are stored EIP-55 checksummed — the one canonical form. Passing a lowercased address to `_eq` matches nothing:
 
 ```graphql
-# This may fail to match
-atoms(where: { label: { _eq: "0xAbC123..." } })
+# This fails — lowercased address won't match the checksummed row
+atoms(where: { data: { _eq: "0xabc123..." } })
 
-# Use case-insensitive matching
-atoms(where: { label: { _ilike: "0xabc123..." } })
+# Correct — exact match on the EIP-55 checksummed value
+atoms(where: { data: { _eq: "0xAbC123..." } })
 ```
 
-**Solution**: Normalize addresses to lowercase and use `_ilike` for comparison.
+**Solution**: Run `viem.getAddress()` on every address at the boundary, then match with `_eq`. Never lowercase an address, and never use `_ilike` for address matching (`_ilike` is for fuzzy text/label search only).
 
 #### Problem: Slow Queries
 
@@ -2453,9 +2464,9 @@ const isInTrustedCircle = trustedCircle.some(
 );
 // If accountId is term_id and position.account_id is wallet, this never matches
 
-// CORRECT - ensure both are wallet addresses
+// CORRECT - both are EIP-55 checksummed; compare canonical forms
 const isInTrustedCircle = trustedCircle.some(
-  contact => contact.accountId.toLowerCase() === position.account_id.toLowerCase()
+  contact => getAddress(contact.accountId) === getAddress(position.account_id)
 );
 ```
 
@@ -3338,7 +3349,7 @@ async function checkAccess(userAddress: string): Promise<boolean> {
   // Check if any known-good actors trust this user
   const knownGoodActors = ['0x...', '0x...'];
   const trustedByKnownGood = trustData.trusters.some(
-    t => knownGoodActors.includes(t.toLowerCase())
+    t => knownGoodActors.includes(getAddress(t))
   );
 
   return trustedByKnownGood;
@@ -4183,7 +4194,7 @@ query GetTripleWithPositions($termId: String!) {
 # Get user positions
 query GetUserPositions($userId: String!) {
   positions(
-    where: { account_id: { _ilike: $userId } },
+    where: { account_id: { _eq: $userId } },
     order_by: [{ shares: desc }]
   ) {
     term_id

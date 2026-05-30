@@ -480,7 +480,9 @@ A **naming system** that maps human-readable names (e.g., `vitalik.eth`) to Ethe
 ---
 
 ### Checksummed Address
-An Ethereum address with **mixed-case letters** for error detection. Example: `0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045`
+An Ethereum address with **mixed-case letters** for error detection (EIP-55). Example: `0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045`
+
+**This is the one canonical address form across Hive Mind.** All indexed addresses (`account_id`, `creator_id`, `accounts.id`, address-typed `atoms.data`) are stored checksummed. Match them in GraphQL with `_eq` (never `_ilike`), compare them with `getAddress(a) === getAddress(b)` (never `.toLowerCase()`), and never store, cache, or display a lowercased (non-canonical) address.
 
 ---
 
