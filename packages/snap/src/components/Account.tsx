@@ -14,6 +14,7 @@ import { TrustedCircleSection } from './TrustedCircle';
 import { NetworkFamiliaritySection } from './NetworkFamiliarity';
 import { UserPositionSection } from './UserPosition';
 import { TrustStatsBlock } from './TrustStatsBlock';
+import { sumMarketCap } from '../term-stats';
 
 /**
  * Section header for the destination address.
@@ -125,17 +126,18 @@ export const AtomWithTrustTriple = (
 ) => {
   const { address, triple, alias, isContract, alternateTrustData, trustedCircle, networkFamiliarity } = params;
   const {
-    counter_term: {
-      vaults: [counterVault],
-    },
-    term: {
-      vaults: [vault],
-    },
+    term: { vaults: termVaults },
+    counter_term: { vaults: counterTermVaults },
     positions,
     counter_positions,
     user_position,
     user_counter_position,
   } = triple;
+
+  // Headline market caps must aggregate across all curves; reading vaults[0]
+  // silently dropped curve >= 2 stake. See term-stats.ts.
+  const supportMarketCap = sumMarketCap(termVaults);
+  const opposeMarketCap = sumMarketCap(counterTermVaults);
 
   const hasUserPosition = (user_position?.length ?? 0) > 0 || (user_counter_position?.length ?? 0) > 0;
 
@@ -171,8 +173,8 @@ export const AtomWithTrustTriple = (
         <NetworkFamiliaritySection networkFamiliarity={networkFamiliarity} />
       ) : null}
       <TrustStatsBlock
-        supportMarketCap={vault?.market_cap || '0'}
-        opposeMarketCap={counterVault?.market_cap || '0'}
+        supportMarketCap={supportMarketCap}
+        opposeMarketCap={opposeMarketCap}
         positions={positions}
         counterPositions={counter_positions}
       />

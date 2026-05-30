@@ -10,6 +10,7 @@ import { OriginType, PropsForOriginType } from '../types';
 import { TrustedCircleSection } from './TrustedCircle';
 import { UserPositionSection } from './UserPosition';
 import { TrustStatsBlock } from './TrustStatsBlock';
+import { sumMarketCap } from '../term-stats';
 import { vendor } from '../vendors';
 
 /**
@@ -100,8 +101,10 @@ export const OriginAtomWithTrustTriple = (
 ) => {
   const { hostname, origin, triple, trustedCircle } = params;
 
-  const supportVault = triple.term?.vaults?.[0];
-  const counterVault = triple.counter_term?.vaults?.[0];
+  // Headline market caps must aggregate across all curves; reading vaults[0]
+  // silently dropped curve >= 2 stake. See term-stats.ts.
+  const supportMarketCap = sumMarketCap(triple.term?.vaults);
+  const counterMarketCap = sumMarketCap(triple.counter_term?.vaults);
 
   const { user_position, user_counter_position } = triple;
   const hasUserPosition = (user_position?.length ?? 0) > 0 || (user_counter_position?.length ?? 0) > 0;
@@ -125,8 +128,8 @@ export const OriginAtomWithTrustTriple = (
         />
       ) : null}
       <TrustStatsBlock
-        supportMarketCap={supportVault?.market_cap || '0'}
-        opposeMarketCap={counterVault?.market_cap || '0'}
+        supportMarketCap={supportMarketCap}
+        opposeMarketCap={counterMarketCap}
         positions={triple.positions || []}
         counterPositions={triple.counter_positions || []}
       />

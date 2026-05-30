@@ -5,6 +5,7 @@ import {
   graphQLQuery,
   getAddressAtomsQuery,
 } from './queries';
+import { sumMarketCap } from './term-stats';
 import {
   Account,
   AccountType,
@@ -76,13 +77,17 @@ const classifyAddress = async (
 };
 
 /**
- * Calculates the total market cap of a trust triple (support + counter).
- * Returns 0n if triple is null or has no vault data.
+ * Calculates the total market cap of a trust triple (support + counter)
+ * by summing across ALL curves on each side. Returns 0n if triple is null
+ * or has no vault data.
+ *
+ * See `term-stats.ts` for why we aggregate across curves instead of reading
+ * `vaults[0]` (curve_id=1).
  */
 const getTrustMarketCap = (triple: TripleWithPositions | null): bigint => {
   if (!triple) return 0n;
-  const supportCap = BigInt(triple.term?.vaults?.[0]?.market_cap ?? '0');
-  const counterCap = BigInt(triple.counter_term?.vaults?.[0]?.market_cap ?? '0');
+  const supportCap = BigInt(sumMarketCap(triple.term?.vaults));
+  const counterCap = BigInt(sumMarketCap(triple.counter_term?.vaults));
   return supportCap + counterCap;
 };
 
