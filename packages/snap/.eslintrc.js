@@ -22,9 +22,7 @@ module.exports = {
             allow: ['Text'],
           },
         ],
-        rules: {
-          '@typescript-eslint/naming-convention': 'off',
-        },
+        '@typescript-eslint/naming-convention': 'off',
       },
     },
     {
