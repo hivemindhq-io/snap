@@ -20,12 +20,28 @@ export type SafetyEntity = 'eoa' | 'contract';
 /** Degree of separation from the viewer. 1 = direct follow / whitelist, 2 = FoaF. */
 export type TrustDegree = 1 | 2;
 
+/**
+ * How an author relates to the viewer, used for attribution grouping:
+ *  - 'authority' = a whitelisted publisher (degree-1, but distinct from a follow),
+ *  - 'follow'    = a 1-hop trust-circle contact the viewer follows directly,
+ *  - 'extended'  = a 2-hop friend-of-a-friend reachable via the viewer's follows.
+ *
+ * This splits the otherwise-conflated degree-1 tier (authorities + follows) so
+ * the UI can attribute each backer to its true source.
+ */
+export type SafetySource = 'authority' | 'follow' | 'extended';
+
 /** An account asserting a safety claim, with display attribution. */
 export interface SafetyAuthor {
   /** The asserting account's address. */
   accountId: string;
   /** Display label — the account's ENS name, else a truncated hex address. */
   label: string;
+  /**
+   * How this author relates to the viewer (authority / follow / extended).
+   * Drives the per-tier attribution grouping in the safety rows.
+   */
+  source: SafetySource;
   /**
    * Separation from the viewer. 1 = direct follow / whitelist authority,
    * 2 = extended network (friend-of-a-friend). Absent ⇒ treat as 1.

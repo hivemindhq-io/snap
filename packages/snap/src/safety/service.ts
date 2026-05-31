@@ -488,6 +488,7 @@ function buildAuthors(
       byAddress.set(address, {
         accountId: address,
         label: resolveLabel(address),
+        source: 'authority',
         degree: 1,
       });
       continue;
@@ -500,6 +501,7 @@ function buildAuthors(
         byAddress.set(address, {
           accountId: address,
           label: resolveLabel(address, trustLabel),
+          source: 'follow',
           degree: 1,
         });
       }
@@ -519,6 +521,7 @@ function buildAuthors(
         byAddress.set(address, {
           accountId: ext.accountId,
           label: resolveLabel(ext.accountId, ext.label),
+          source: 'extended',
           degree: 2,
           via: ext.via,
         });
