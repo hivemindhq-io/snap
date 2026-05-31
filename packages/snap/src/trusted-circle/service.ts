@@ -536,6 +536,9 @@ interface AllClaimsResponse {
  * @param alreadyDisplayedIds - Set of account IDs already shown in TrustedCircle section (normalized lowercase)
  * @param userAddress - The current user's address to exclude
  * @param extendedIndex - Optional 2-hop lookup (FoaF ids + per-contact bridges)
+ * @param excludeTermIds - Optional set of triple term_ids already surfaced in the
+ *   safety section. Matching claims are skipped so each claim has exactly one home
+ *   (Opt 3 dedup); contacts left with zero claims are naturally dropped.
  * @returns Network familiarity data, or undefined if no relevant contacts
  */
 export async function getNetworkFamiliarity(
@@ -544,6 +547,7 @@ export async function getNetworkFamiliarity(
   alreadyDisplayedIds: Set<string>,
   userAddress?: string,
   extendedIndex?: { ids: Set<string>; byAddress: Map<string, ExtendedContact> },
+  excludeTermIds?: Set<string>,
 ): Promise<NetworkFamiliarity | undefined> {
   if (trustedCircle.length === 0) {
     return undefined;
@@ -587,6 +591,10 @@ export async function getNetworkFamiliarity(
     };
 
     for (const triple of triples) {
+      // Dedup (Opt 3): this claim already lives in the safety surface, so skip it
+      // here to avoid showing the same triple in two places.
+      if (excludeTermIds?.has(triple.term_id)) continue;
+
       const predicateLabel = triple.predicate?.label || 'unknown';
       const objectLabel = triple.object?.label || 'unknown';
       const claim: ClaimContext = { predicateLabel, objectLabel };

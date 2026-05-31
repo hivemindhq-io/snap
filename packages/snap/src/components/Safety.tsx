@@ -12,10 +12,31 @@
  * @module components/Safety
  */
 
-import { Box, Row, Text, Heading, Section, Bold } from '@metamask/snaps-sdk/jsx';
-import type { SafetyData, SafetySignal, SafetyAuthor } from '../safety/types';
+import {
+  Box,
+  Row,
+  Text,
+  Heading,
+  Section,
+  Bold,
+  type JSXElement,
+} from '@metamask/snaps-sdk/jsx';
+
+import type {
+  SafetyData,
+  SafetySignal,
+  SafetyAuthor,
+  SafetySource,
+} from '../safety/types';
 
 const MAX_AUTHORS = 3;
+
+/** Display order + heading for each attribution tier (Option 2 sub-rows). */
+const SOURCE_TIERS: { source: SafetySource; label: string }[] = [
+  { source: 'authority', label: 'Authority' },
+  { source: 'follow', label: 'Your follows' },
+  { source: 'extended', label: 'Extended network' },
+];
 
 /**
  * Formats the attribution authors into a short readable string.
@@ -33,13 +54,63 @@ function formatAuthors(authors: SafetyAuthor[]): string {
   return shown.join(', ');
 }
 
-/** Builds the "via …" attribution suffix for a signal. */
-function attribution(signal: SafetySignal): string {
-  const authors = formatAuthors(signal.attributedAuthors);
-  if (!authors) {
-    return '';
+/**
+ * Largest number of the viewer's follows that bridge to any single degree-2
+ * author in a group — the "via N follows" path strength for the extended tier.
+ */
+function maxVia(authors: SafetyAuthor[]): number {
+  let max = 0;
+  for (const author of authors) {
+    if (author.via) {
+      max = Math.max(max, author.via.length);
+    }
   }
-  return signal.fromWhitelist ? `Flagged by ${authors}` : `From your circle: ${authors}`;
+  return max;
+}
+
+/**
+ * Option 2 attribution: one labeled sub-row per source tier (Authority / Your
+ * follows / Extended network), so a whitelisted authority, a 1-hop follow, and
+ * a friend-of-a-friend are never conflated into one flat list. Tiers with no
+ * authors are omitted. The extended tier carries a "via N follows" suffix to
+ * keep the transitive nature explicit. `color` matches the parent claim's tone.
+ *
+ * @param signal - The classified safety signal.
+ * @param color - Text color for the value lines ('error' | 'warning' | 'muted').
+ * @returns A Box of per-tier Text lines, or null when there are no authors.
+ */
+function attributionRows(
+  signal: SafetySignal,
+  color: 'error' | 'warning' | 'muted',
+): JSXElement | null {
+  const tiers = SOURCE_TIERS.map((tier) => ({
+    tier,
+    authors: signal.attributedAuthors.filter(
+      (author) => author.source === tier.source,
+    ),
+  })).filter((entry) => entry.authors.length > 0);
+
+  if (tiers.length === 0) {
+    return null;
+  }
+
+  return (
+    <Box>
+      {tiers.map(({ tier, authors }) => {
+        const bridges = maxVia(authors);
+        const suffix =
+          tier.source === 'extended' && bridges > 0
+            ? ` · via ${bridges} of your follows`
+            : '';
+        return (
+          <Text color={color}>
+            <Bold>{tier.label}:</Bold> {formatAuthors(authors)}
+            {suffix}
+          </Text>
+        );
+      })}
+    </Box>
+  );
 }
 
 /**
@@ -94,9 +165,7 @@ const CriticalReports = ({ signals }: { signals: SafetySignal[] }) => {
       <Heading size="sm">⚠️ Safety Warning</Heading>
       {signals.map((signal) => (
         <Row label={`Reported: ${signal.objectLabel}`} variant="critical">
-          <Text color="error">
-            <Bold>{attribution(signal)}</Bold>
-          </Text>
+          {attributionRows(signal, 'error') ?? <Text color="error"> </Text>}
         </Row>
       ))}
     </Section>
@@ -115,7 +184,7 @@ const SafetyWarnings = ({ signals }: { signals: SafetySignal[] }) => {
       <Heading size="sm">Safety Flags</Heading>
       {signals.map((signal) => (
         <Row label={signal.objectLabel} variant="warning">
-          <Text color="warning">{attribution(signal)}</Text>
+          {attributionRows(signal, 'warning') ?? <Text color="warning"> </Text>}
         </Row>
       ))}
     </Section>
@@ -191,39 +260,105 @@ const ExtendedProvenance = ({ signals }: { signals: SafetySignal[] }) => {
 };
 
 /**
- * Renders the full safety insight block, or null when there is nothing to show.
+ * Splits a SafetyData into its primary (1st-degree / whitelist) and extended
+ * (2nd-degree-only) signal groups, so the primary and extended renderers
+ * partition the same data consistently. Primary warnings are the hard-lane
+ * (non-critical) reports plus any soft signal also backed by a 1-hop/whitelist
+ * author; extended warnings are the soft signals whose only attribution is the
+ * extended network (degree-2).
  *
- * @param safety - Categorized safety data
- * @returns JSX element or null
+ * @param safety - Categorized safety data.
+ * @returns The primary/extended signal groups.
  */
-export const renderSafetyInsight = (safety: SafetyData | undefined) => {
+function splitSafety(safety: SafetyData) {
+  const { critical, warnings, provenance } = safety;
+  return {
+    critical,
+    primaryWarnings: warnings.filter(
+      (signal) => signal.lane !== 'soft' || !isExtendedOnly(signal),
+    ),
+    extendedWarnings: warnings.filter(
+      (signal) => signal.lane === 'soft' && isExtendedOnly(signal),
+    ),
+    primaryProvenance: provenance.filter((signal) => !isExtendedOnly(signal)),
+    extendedProvenance: provenance.filter((signal) => isExtendedOnly(signal)),
+  };
+}
+
+/**
+ * Renders the PRIMARY safety block: critical authority reports, 1st-degree /
+ * whitelist warnings, and 1st-degree provenance. This is the high-value tier
+ * shown inline on the primary insight. Returns null when there is nothing.
+ *
+ * @param safety - Categorized safety data.
+ * @returns JSX element or null.
+ */
+export const renderPrimarySafety = (safety: SafetyData | undefined) => {
   if (!safety) {
     return null;
   }
-  const { critical, warnings, provenance } = safety;
-  if (critical.length === 0 && warnings.length === 0 && provenance.length === 0) {
+  const { critical, primaryWarnings, primaryProvenance } = splitSafety(safety);
+  if (
+    critical.length === 0 &&
+    primaryWarnings.length === 0 &&
+    primaryProvenance.length === 0
+  ) {
     return null;
   }
-
-  // Split the soft lane: 2nd-degree-only signals render in their own block below
-  // the 1st-degree warnings. Hard-lane (non-critical reports) and any signal
-  // also backed by a 1-hop/whitelist author stay in the primary warnings block.
-  const primaryWarnings = warnings.filter(
-    (s) => s.lane !== 'soft' || !isExtendedOnly(s),
-  );
-  const extendedWarnings = warnings.filter(
-    (s) => s.lane === 'soft' && isExtendedOnly(s),
-  );
-  const primaryProvenance = provenance.filter((s) => !isExtendedOnly(s));
-  const extendedProvenance = provenance.filter((s) => isExtendedOnly(s));
 
   return (
     <Box>
       <CriticalReports signals={critical} />
       <SafetyWarnings signals={primaryWarnings} />
-      <ExtendedWarnings signals={extendedWarnings} />
       <Provenance signals={primaryProvenance} />
+    </Box>
+  );
+};
+
+/**
+ * Renders the EXTENDED safety block: 2nd-degree-only warnings and 2nd-degree
+ * provenance. This is the lower-weight, friend-of-a-friend tier pushed behind
+ * the "More info" page. Returns null when there is nothing.
+ *
+ * @param safety - Categorized safety data.
+ * @returns JSX element or null.
+ */
+export const renderExtendedSafety = (safety: SafetyData | undefined) => {
+  if (!safety) {
+    return null;
+  }
+  const { extendedWarnings, extendedProvenance } = splitSafety(safety);
+  if (extendedWarnings.length === 0 && extendedProvenance.length === 0) {
+    return null;
+  }
+
+  return (
+    <Box>
+      <ExtendedWarnings signals={extendedWarnings} />
       <ExtendedProvenance signals={extendedProvenance} />
+    </Box>
+  );
+};
+
+/**
+ * Renders the full safety insight block (primary + extended), or null when
+ * there is nothing to show. Thin wrapper retained for back-compat; the
+ * interactive insight uses the split renderers directly.
+ *
+ * @param safety - Categorized safety data.
+ * @returns JSX element or null.
+ */
+export const renderSafetyInsight = (safety: SafetyData | undefined) => {
+  const primary = renderPrimarySafety(safety);
+  const extended = renderExtendedSafety(safety);
+  if (!primary && !extended) {
+    return null;
+  }
+
+  return (
+    <Box>
+      {primary}
+      {extended}
     </Box>
   );
 };

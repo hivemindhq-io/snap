@@ -3,17 +3,20 @@ import type {
   OnTransactionHandler,
   Transaction,
 } from '@metamask/snaps-sdk';
-import { Box } from '@metamask/snaps-sdk/jsx';
 
 import { getAccountData, getAccountType, renderOnTransaction } from './account';
-import { getOriginData, getOriginType, renderOriginInsight } from './origin';
+import { getOriginData, getOriginType } from './origin';
 import {
-  AccountType,
   AccountProps,
-  OriginType,
   OriginProps,
 } from './types';
-import { UnifiedFooter, renderSafetyInsight, renderNetworkInsight } from './components';
+import type { InsightModel } from './insight-view';
+import {
+  hasMoreInfo,
+  buildPrimaryInsight,
+  jsonClone,
+  toInterfaceContext,
+} from './insight-view';
 import {
   getTrustedCircle,
   getTrustedContactsWithPositions,
@@ -98,6 +101,37 @@ export const onTransaction: OnTransactionHandler = async ({
     }
   }
 
+  // Compute the safety read surface FIRST (critical reports, soft flags,
+  // provenance). Resolves predicate/object term IDs from the claim-template
+  // registry and gates signals by the publisher whitelist + the user's trust
+  // circle. Computed before familiarity so the term_ids it surfaces can be
+  // excluded from the familiarity section (Opt 3 dedup — one home per claim).
+  let accountSafety: SafetyData | undefined;
+  if (accountData.account) {
+    accountSafety = await getSafetyData(accountData.account.term_id, {
+      registry: claimTemplates,
+      trustedCircle,
+      whitelist: publisherWhitelist,
+      userAddress,
+      isContract: accountData.isContract,
+      extendedIndex: EXTENDED_NETWORK_ENABLED ? extendedIndex : undefined,
+    });
+  }
+
+  // Collect the triple term_ids already surfaced by the safety lane (critical +
+  // warnings + provenance). These claims have their home in the safety section,
+  // so they are excluded from the familiarity section below.
+  const safetyTermIds = new Set<string>();
+  if (accountSafety) {
+    for (const signal of [
+      ...accountSafety.critical,
+      ...accountSafety.warnings,
+      ...accountSafety.provenance,
+    ]) {
+      safetyTermIds.add(signal.termId);
+    }
+  }
+
   // Calculate network familiarity (trusted contacts with ANY claim about this address)
   let accountNetworkFamiliarity: NetworkFamiliarity | undefined;
   if (trustedCircle.length > 0 && accountData.account) {
@@ -118,22 +152,8 @@ export const onTransaction: OnTransactionHandler = async ({
       alreadyDisplayedIds,
       userAddress,
       EXTENDED_NETWORK_ENABLED ? extendedIndex : undefined,
+      safetyTermIds,
     );
-  }
-
-  // Compute the safety read surface (critical reports, soft flags, provenance).
-  // Resolves predicate/object term IDs from the claim-template registry and
-  // gates signals by the publisher whitelist + the user's trust circle.
-  let accountSafety: SafetyData | undefined;
-  if (accountData.account) {
-    accountSafety = await getSafetyData(accountData.account.term_id, {
-      registry: claimTemplates,
-      trustedCircle,
-      whitelist: publisherWhitelist,
-      userAddress,
-      isContract: accountData.isContract,
-      extendedIndex: EXTENDED_NETWORK_ENABLED ? extendedIndex : undefined,
-    });
   }
 
   // Calculate trusted circle positions for origin trust triple
@@ -180,50 +200,48 @@ export const onTransaction: OnTransactionHandler = async ({
     trustedCircle: originTrustedCircle,
   } as OriginProps; // Type assertion needed due to the discriminated union
 
-  // Render the safety read surface (critical reports, soft flags, provenance).
-  // Rendered ABOVE the existing insight sections so safety overrides reputation.
-  const safetyUI = renderSafetyInsight(accountSafety);
-
-  // Render the standalone "Your network" surface: 1-hop "Also Familiar" plus a
-  // SEPARATE degree-2 "Extended Network" subsection. The legacy account card
-  // that used to host familiarity is hidden, so this is its visible home.
-  const networkUI = renderNetworkInsight(accountNetworkFamiliarity);
-
-  // Render both account and origin insights (information sections only)
   // LEGACY-HIDDEN (Destination card): the account/destination insight (address,
   // positions, market cap, trust stats) is legacy. We're shifting focus to WHO
   // made claims rather than position/market-cap specifics. Hidden for now.
-  // To restore: `const accountUI = renderOnTransaction(accountProps);`
-  const accountUI = null;
+  // To restore: render `renderOnTransaction(accountProps)` in the primary view.
   void renderOnTransaction; // retained import; remove this once we delete the card for good
-  let originUI = null;
-  if (!shouldSuppressOrigin(originProps?.originUrl, originProps?.hostname)) {
-    originUI = renderOriginInsight(originProps);
+
+  const suppressOrigin = shouldSuppressOrigin(
+    originProps?.originUrl,
+    originProps?.hostname,
+  );
+
+  // Build the serializable model that drives both the primary insight and the
+  // interactive "More info" page. The nested `safety`/`networkFamiliarity` on
+  // `accountProps` are dropped first (the model carries each payload exactly
+  // once); JSON-cloning then guarantees a plain `Json` structure (drops
+  // `undefined`/functions/Sets/Maps) before it enters the interface context.
+  const {
+    safety: _droppedSafety,
+    networkFamiliarity: _droppedFamiliarity,
+    ...footerAccountProps
+  } = accountProps;
+  const model: InsightModel = jsonClone({
+    safety: accountSafety ?? null,
+    familiarity: accountNetworkFamiliarity ?? null,
+    accountProps: footerAccountProps as AccountProps,
+    originProps,
+    suppressOrigin,
+  });
+
+  // When there is content to expand (2nd-degree signals or a dApp origin
+  // insight), return an interactive interface so the user can navigate to the
+  // "More info" page. Otherwise return static content (no button rendered).
+  if (hasMoreInfo(model)) {
+    const id = await snap.request({
+      method: 'snap_createInterface',
+      params: {
+        ui: buildPrimaryInsight(model),
+        context: toInterfaceContext(model),
+      },
+    });
+    return { id };
   }
 
-  // Render unified footer with all CTAs at the bottom
-  const footerUI = (
-    <UnifiedFooter
-      accountProps={accountProps}
-      originProps={originProps}
-    />
-  );
-
-  // Combine into final UI: safety surface first (above all existing elements),
-  // then info sections, then all CTAs at bottom.
-  const initialUI = (
-    <Box>
-      {safetyUI}
-      {networkUI}
-      {accountUI}
-      {originUI}
-      {footerUI}
-    </Box>
-  );
-
-  // The transaction insight has no interactive elements, so we return the
-  // content directly instead of creating a managed interface.
-  return {
-    content: initialUI,
-  };
+  return { content: buildPrimaryInsight(model) };
 };

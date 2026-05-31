@@ -144,6 +144,43 @@ const ExtendedFamiliaritySection = ({
 };
 
 /**
+ * Renders ONLY the 1-hop "Also Familiar" block (direct follows with claims).
+ * This is the high-value familiarity tier shown inline on the primary insight.
+ * Returns null when there are no 1-hop familiar contacts.
+ *
+ * @param networkFamiliarity - Aggregated familiarity data.
+ * @returns JSX element or null.
+ */
+export const renderOneHopFamiliarity = (
+  networkFamiliarity: NetworkFamiliarity | undefined,
+) => {
+  if (!networkFamiliarity || networkFamiliarity.familiarContacts.length === 0) {
+    return null;
+  }
+
+  return <NetworkFamiliaritySection networkFamiliarity={networkFamiliarity} />;
+};
+
+/**
+ * Renders ONLY the degree-2 "Extended Network" block (friend-of-a-friend
+ * contacts with claims). This is the lower-weight tier pushed behind the
+ * "More info" page. Returns null when there are no extended contacts.
+ *
+ * @param networkFamiliarity - Aggregated familiarity data.
+ * @returns JSX element or null.
+ */
+export const renderExtendedFamiliarity = (
+  networkFamiliarity: NetworkFamiliarity | undefined,
+) => {
+  const extendedContacts = networkFamiliarity?.extendedContacts;
+  if (!extendedContacts || extendedContacts.length === 0) {
+    return null;
+  }
+
+  return <ExtendedFamiliaritySection contacts={extendedContacts} />;
+};
+
+/**
  * Renders the standalone "Your network" insight: the 1-hop "Also Familiar"
  * block plus a separate degree-2 "Extended Network" subsection. Returns null
  * when there is nothing in either tier.
@@ -152,32 +189,23 @@ const ExtendedFamiliaritySection = ({
  * used to host familiarity is hidden), so this is the visible home for the
  * "WHO in your network knows this address" surface.
  *
- * @param networkFamiliarity - Aggregated 1-hop + 2-hop familiarity data
- * @returns JSX element or null
+ * @param networkFamiliarity - Aggregated 1-hop + 2-hop familiarity data.
+ * @returns JSX element or null.
  */
 export const renderNetworkInsight = (
   networkFamiliarity: NetworkFamiliarity | undefined,
 ) => {
-  if (!networkFamiliarity) {
-    return null;
-  }
+  const oneHop = renderOneHopFamiliarity(networkFamiliarity);
+  const extended = renderExtendedFamiliarity(networkFamiliarity);
 
-  const { familiarContacts, extendedContacts } = networkFamiliarity;
-  const hasOneHop = familiarContacts.length > 0;
-  const hasTwoHop = (extendedContacts?.length ?? 0) > 0;
-
-  if (!hasOneHop && !hasTwoHop) {
+  if (!oneHop && !extended) {
     return null;
   }
 
   return (
     <Box>
-      {hasOneHop ? (
-        <NetworkFamiliaritySection networkFamiliarity={networkFamiliarity} />
-      ) : null}
-      {hasTwoHop && extendedContacts ? (
-        <ExtendedFamiliaritySection contacts={extendedContacts} />
-      ) : null}
+      {oneHop}
+      {extended}
     </Box>
   );
 };

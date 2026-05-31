@@ -24,3 +24,4 @@ export const onHomePage: OnHomePageHandler = async () => {
 };
 
 export * from './onTransaction';
+export * from './onUserInput';
