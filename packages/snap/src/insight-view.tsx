@@ -22,12 +22,12 @@ import { Box, Button } from '@metamask/snaps-sdk/jsx';
 
 import {
   UnifiedFooter,
+  OriginBlock,
   renderPrimarySafety,
   renderExtendedSafety,
   renderOneHopFamiliarity,
   renderExtendedFamiliarity,
 } from './components';
-import { renderOriginInsight } from './origin';
 import type { SafetyData } from './safety/types';
 import type { NetworkFamiliarity } from './trusted-circle/types';
 import type { AccountProps, OriginProps } from './types';
@@ -43,13 +43,17 @@ export const BACK_BUTTON = 'back';
  * `snap_updateInterface`.
  */
 export type InsightModel = {
-  /** Classified safety data (critical / warnings / provenance), or null. */
+  /** Destination address: classified safety data, or null. */
   safety: SafetyData | null;
-  /** 1-hop + 2-hop familiarity data, or null. */
+  /** Destination address: 1-hop + 2-hop familiarity data, or null. */
   familiarity: NetworkFamiliarity | null;
+  /** dApp origin: classified safety data (URL/site vocabulary), or null. */
+  originSafety: SafetyData | null;
+  /** dApp origin: 1-hop + 2-hop familiarity data, or null. */
+  originFamiliarity: NetworkFamiliarity | null;
   /** Account props used by the footer CTAs. */
   accountProps: AccountProps;
-  /** Origin props used by the origin insight + footer. */
+  /** Origin props used by the origin block + footer. */
   originProps: OriginProps;
   /** Whether the origin section is suppressed (metamask/localhost/no origin). */
   suppressOrigin: boolean;
@@ -96,9 +100,10 @@ export function jsonClone<T>(value: T): T {
 
 /**
  * Whether the model has any content that belongs on the secondary "More info"
- * page: 2nd-degree safety signals, 2nd-degree familiarity, or a (non-suppressed)
- * dApp origin insight. When false, the primary insight is returned as static
- * content with no "More info" button.
+ * page. Data-driven: true when the destination address has 2nd-degree safety or
+ * familiarity, OR the dApp origin has any non-critical safety / any familiarity
+ * / a contextual link to render. When false, the primary insight is returned as
+ * static content with no "More info" button.
  *
  * @param model - The insight model.
  * @returns True when there is more-info content to expand.
@@ -106,11 +111,22 @@ export function jsonClone<T>(value: T): T {
 export function hasMoreInfo(model: InsightModel): boolean {
   const safety = model.safety ?? undefined;
   const familiarity = model.familiarity ?? undefined;
-  return (
+  const originSafety = model.originSafety ?? undefined;
+  const originFamiliarity = model.originFamiliarity ?? undefined;
+
+  const addressMore =
     renderExtendedSafety(safety) !== null ||
-    renderExtendedFamiliarity(familiarity) !== null ||
-    !model.suppressOrigin
-  );
+    renderExtendedFamiliarity(familiarity) !== null;
+
+  const originMore =
+    OriginBlock({
+      variant: 'more',
+      originProps: model.originProps,
+      safety: originSafety,
+      familiarity: originFamiliarity,
+    }) !== null;
+
+  return addressMore || originMore;
 }
 
 /**
@@ -122,10 +138,18 @@ export function hasMoreInfo(model: InsightModel): boolean {
 export function buildPrimaryInsight(model: InsightModel) {
   const safety = model.safety ?? undefined;
   const familiarity = model.familiarity ?? undefined;
+  const originSafety = model.originSafety ?? undefined;
+  const originFamiliarity = model.originFamiliarity ?? undefined;
 
   return (
     <Box>
       {renderPrimarySafety(safety)}
+      <OriginBlock
+        variant="primary"
+        originProps={model.originProps}
+        safety={originSafety}
+        familiarity={originFamiliarity}
+      />
       {renderOneHopFamiliarity(familiarity)}
       {hasMoreInfo(model) ? (
         <Button name={MORE_INFO_BUTTON}>More info</Button>
@@ -147,13 +171,20 @@ export function buildPrimaryInsight(model: InsightModel) {
 export function buildMoreInfoInsight(model: InsightModel) {
   const safety = model.safety ?? undefined;
   const familiarity = model.familiarity ?? undefined;
+  const originSafety = model.originSafety ?? undefined;
+  const originFamiliarity = model.originFamiliarity ?? undefined;
 
   return (
     <Box>
-      <Button name={BACK_BUTTON}>Back</Button>
       {renderExtendedSafety(safety)}
       {renderExtendedFamiliarity(familiarity)}
-      {model.suppressOrigin ? null : renderOriginInsight(model.originProps)}
+      <OriginBlock
+        variant="more"
+        originProps={model.originProps}
+        safety={originSafety}
+        familiarity={originFamiliarity}
+      />
+      <Button name={BACK_BUTTON}>Back</Button>
     </Box>
   );
 }

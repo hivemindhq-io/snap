@@ -15,7 +15,7 @@
 
 export type SafetyLane = 'hard' | 'soft' | 'provenance';
 
-export type SafetyEntity = 'eoa' | 'contract';
+export type SafetyEntity = 'eoa' | 'contract' | 'site';
 
 /** Degree of separation from the viewer. 1 = direct follow / whitelist, 2 = FoaF. */
 export type TrustDegree = 1 | 2;
@@ -32,7 +32,7 @@ export type TrustDegree = 1 | 2;
 export type SafetySource = 'authority' | 'follow' | 'extended';
 
 /** An account asserting a safety claim, with display attribution. */
-export interface SafetyAuthor {
+export type SafetyAuthor = {
   /** The asserting account's address. */
   accountId: string;
   /** Display label — the account's ENS name, else a truncated hex address. */
@@ -52,10 +52,10 @@ export interface SafetyAuthor {
    * follows who bridge to this account ("via alice.eth, bob.eth").
    */
   via?: string[];
-}
+};
 
 /** A single classified safety signal about the target address. */
-export interface SafetySignal {
+export type SafetySignal = {
   /** Stable key (the triple term_id). */
   termId: string;
   lane: SafetyLane;
@@ -78,14 +78,14 @@ export interface SafetySignal {
   fromExtendedNetwork: boolean;
   /** Whether this is a top-of-screen critical authority report. */
   critical: boolean;
-}
+};
 
 /** Categorized safety data attached to the account props for rendering. */
-export interface SafetyData {
+export type SafetyData = {
   /** Critical authority reports — rendered at the very top as danger banners. */
   critical: SafetySignal[];
   /** Soft flags + non-critical hard reports — rendered as caution warnings. */
   warnings: SafetySignal[];
   /** Provenance / identity signals. */
   provenance: SafetySignal[];
-}
+};

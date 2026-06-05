@@ -4,34 +4,28 @@ import type {
   Transaction,
 } from '@metamask/snaps-sdk';
 
-import { getAccountData, getAccountType, renderOnTransaction } from './account';
-import { getOriginData, getOriginType } from './origin';
-import {
-  AccountProps,
-  OriginProps,
-} from './types';
-import type { InsightModel } from './insight-view';
+import { getAccountData, getAccountType } from './account';
+import { getClaimTemplates } from './claim-templates';
+import { EXTENDED_NETWORK_ENABLED } from './config';
 import {
   hasMoreInfo,
   buildPrimaryInsight,
   jsonClone,
   toInterfaceContext,
 } from './insight-view';
-import {
-  getTrustedCircle,
-  getTrustedContactsWithPositions,
-  enrichContactLabels,
-  getNetworkFamiliarity,
-  getExtendedNetwork,
-  indexExtendedNetwork,
-  TrustedCirclePositions,
-  NetworkFamiliarity,
-} from './trusted-circle';
-import { EXTENDED_NETWORK_ENABLED } from './config';
-import { getClaimTemplates } from './claim-templates';
+import type { InsightModel } from './insight-view';
+import { getOriginData, getOriginType } from './origin';
 import { getPublisherWhitelist } from './publisher-whitelist';
 import { getSafetyData } from './safety';
 import type { SafetyData } from './safety';
+import {
+  getTrustedCircle,
+  getNetworkFamiliarity,
+  getExtendedNetwork,
+  indexExtendedNetwork,
+} from './trusted-circle';
+import type { NetworkFamiliarity } from './trusted-circle';
+import type { AccountProps, OriginProps } from './types';
 import { shouldSuppressOrigin } from './util';
 
 export const onTransaction: OnTransactionHandler = async ({
@@ -43,7 +37,6 @@ export const onTransaction: OnTransactionHandler = async ({
   chainId: ChainId;
   transactionOrigin?: string;
 }) => {
-
   // "to" ENS addresses arrive here as EVM addresses, EVM addresses arrive as EVM addresses
   const userAddress: string | undefined = transaction.from;
 
@@ -55,7 +48,7 @@ export const onTransaction: OnTransactionHandler = async ({
     publisherWhitelist,
   ] = await Promise.all([
     getAccountData(transaction, chainId, userAddress),
-    getOriginData(transactionOrigin, userAddress),
+    getOriginData(transactionOrigin),
     userAddress ? getTrustedCircle(userAddress) : Promise.resolve([]),
     // Claim-template registry: predicate/object term IDs the safety read
     // surface resolves against. Falls back to chainConfig constants internally.
@@ -76,30 +69,6 @@ export const onTransaction: OnTransactionHandler = async ({
       ? await getExtendedNetwork(userAddress, trustedCircle)
       : { contacts: [] };
   const extendedIndex = indexExtendedNetwork(extendedNetwork);
-
-  // Calculate trusted circle positions for account trust triple
-  let accountTrustedCircle: TrustedCirclePositions | undefined;
-  if (trustedCircle.length > 0 && accountData.triple) {
-    const positions = accountData.triple.positions || [];
-    const counterPositions = accountData.triple.counter_positions || [];
-
-    accountTrustedCircle = getTrustedContactsWithPositions(
-      trustedCircle,
-      positions,
-      counterPositions,
-      userAddress,
-    );
-    // Only include if there are contacts with positions
-    if (
-      accountTrustedCircle.forContacts.length === 0 &&
-      accountTrustedCircle.againstContacts.length === 0
-    ) {
-      accountTrustedCircle = undefined;
-    } else {
-      // Enrich with resolved labels (ENS names, etc.)
-      accountTrustedCircle = await enrichContactLabels(accountTrustedCircle);
-    }
-  }
 
   // Compute the safety read surface FIRST (critical reports, soft flags,
   // provenance). Resolves predicate/object term IDs from the claim-template
@@ -132,51 +101,71 @@ export const onTransaction: OnTransactionHandler = async ({
     }
   }
 
-  // Calculate network familiarity (trusted contacts with ANY claim about this address)
+  // Calculate network familiarity (trusted contacts with ANY claim about this
+  // address). The `has tag → trustworthy` triple is no longer special-cased —
+  // it surfaces here as a regular claim like any other.
   let accountNetworkFamiliarity: NetworkFamiliarity | undefined;
   if (trustedCircle.length > 0 && accountData.account) {
-    // Build set of account IDs already shown in TrustedCircle section for de-duplication
-    const alreadyDisplayedIds = new Set<string>();
-    if (accountTrustedCircle) {
-      for (const c of accountTrustedCircle.forContacts) {
-        alreadyDisplayedIds.add(c.accountId.toLowerCase());
-      }
-      for (const c of accountTrustedCircle.againstContacts) {
-        alreadyDisplayedIds.add(c.accountId.toLowerCase());
-      }
-    }
-
     accountNetworkFamiliarity = await getNetworkFamiliarity(
       accountData.account.term_id,
       trustedCircle,
-      alreadyDisplayedIds,
+      new Set<string>(),
       userAddress,
       EXTENDED_NETWORK_ENABLED ? extendedIndex : undefined,
       safetyTermIds,
     );
   }
 
-  // Calculate trusted circle positions for origin trust triple
-  let originTrustedCircle: TrustedCirclePositions | undefined;
-  if (trustedCircle.length > 0 && originData.triple) {
-    const positions = originData.triple.positions || [];
-    const counterPositions = originData.triple.counter_positions || [];
-    originTrustedCircle = getTrustedContactsWithPositions(
+  // Whether the dApp-origin surface is suppressed (no origin, MetaMask, or a
+  // localhost/dev URL). Computed here so origin safety/familiarity work can be
+  // skipped entirely when there is nothing to show.
+  const suppressOrigin = shouldSuppressOrigin(
+    transactionOrigin,
+    originData.hostname,
+  );
+
+  // Origin (dApp) safety read surface — same pipeline as the destination
+  // address, scoped to the URL/site claim vocabulary (entity 'site'). Hard
+  // reports (phishing / drainer / scam) are critical-worthy; the soft tag
+  // (impersonation) is a warning. Positives are NOT safety — they surface via
+  // origin familiarity below, mirroring how the address treats `trustworthy`.
+  let originSafety: SafetyData | undefined;
+  if (originData.origin && !suppressOrigin) {
+    originSafety = await getSafetyData(originData.origin.term_id, {
+      registry: claimTemplates,
       trustedCircle,
-      positions,
-      counterPositions,
+      whitelist: publisherWhitelist,
       userAddress,
-    );
-    // Only include if there are contacts with positions
-    if (
-      originTrustedCircle.forContacts.length === 0 &&
-      originTrustedCircle.againstContacts.length === 0
-    ) {
-      originTrustedCircle = undefined;
-    } else {
-      // Enrich with resolved labels (ENS names, etc.)
-      originTrustedCircle = await enrichContactLabels(originTrustedCircle);
+      entity: 'site',
+      extendedIndex: EXTENDED_NETWORK_ENABLED ? extendedIndex : undefined,
+    });
+  }
+
+  // Term IDs already surfaced by the origin safety lane — excluded from the
+  // origin familiarity section so each claim has exactly one home.
+  const originSafetyTermIds = new Set<string>();
+  if (originSafety) {
+    for (const signal of [
+      ...originSafety.critical,
+      ...originSafety.warnings,
+      ...originSafety.provenance,
+    ]) {
+      originSafetyTermIds.add(signal.termId);
     }
+  }
+
+  // Origin familiarity — trusted contacts (1-hop + 2-hop) with ANY claim about
+  // the dApp atom, with the safety-surfaced claims excluded.
+  let originNetworkFamiliarity: NetworkFamiliarity | undefined;
+  if (trustedCircle.length > 0 && originData.origin && !suppressOrigin) {
+    originNetworkFamiliarity = await getNetworkFamiliarity(
+      originData.origin.term_id,
+      trustedCircle,
+      new Set<string>(),
+      userAddress,
+      EXTENDED_NETWORK_ENABLED ? extendedIndex : undefined,
+      originSafetyTermIds,
+    );
   }
 
   // Create properly typed props based on account type
@@ -187,7 +176,10 @@ export const onTransaction: OnTransactionHandler = async ({
     userAddress,
     chainId,
     transactionOrigin,
-    trustedCircle: accountTrustedCircle,
+    // The account-level "Your Trust Circle" FOR/AGAINST block (driven by the
+    // `has tag → trustworthy` triple) is no longer surfaced; that signal now
+    // flows through network familiarity as a regular claim. `trustedCircle` is
+    // intentionally omitted here (optional on AccountProps).
     networkFamiliarity: accountNetworkFamiliarity,
     safety: accountSafety,
   } as AccountProps; // Type assertion needed due to the discriminated union
@@ -197,19 +189,7 @@ export const onTransaction: OnTransactionHandler = async ({
     ...originData,
     originType,
     originUrl: transactionOrigin,
-    trustedCircle: originTrustedCircle,
   } as OriginProps; // Type assertion needed due to the discriminated union
-
-  // LEGACY-HIDDEN (Destination card): the account/destination insight (address,
-  // positions, market cap, trust stats) is legacy. We're shifting focus to WHO
-  // made claims rather than position/market-cap specifics. Hidden for now.
-  // To restore: render `renderOnTransaction(accountProps)` in the primary view.
-  void renderOnTransaction; // retained import; remove this once we delete the card for good
-
-  const suppressOrigin = shouldSuppressOrigin(
-    originProps?.originUrl,
-    originProps?.hostname,
-  );
 
   // Build the serializable model that drives both the primary insight and the
   // interactive "More info" page. The nested `safety`/`networkFamiliarity` on
@@ -224,6 +204,8 @@ export const onTransaction: OnTransactionHandler = async ({
   const model: InsightModel = jsonClone({
     safety: accountSafety ?? null,
     familiarity: accountNetworkFamiliarity ?? null,
+    originSafety: originSafety ?? null,
+    originFamiliarity: originNetworkFamiliarity ?? null,
     accountProps: footerAccountProps as AccountProps,
     originProps,
     suppressOrigin,

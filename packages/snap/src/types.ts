@@ -1,6 +1,10 @@
-import { ChainId } from '@metamask/snaps-sdk';
-import type { TrustedCirclePositions, NetworkFamiliarity } from './trusted-circle/types';
+import type { ChainId } from '@metamask/snaps-sdk';
+
 import type { SafetyData } from './safety/types';
+import type {
+  TrustedCirclePositions,
+  NetworkFamiliarity,
+} from './trusted-circle/types';
 
 export type Account = {
   id: string;
@@ -41,7 +45,11 @@ export type ClassificationFailureReason = 'eth_getCode_failed';
 export type AddressClassification =
   | { type: 'eoa'; certainty: 'definite' }
   | { type: 'contract'; certainty: 'definite' }
-  | { type: 'unknown'; certainty: 'uncertain'; reason: ClassificationFailureReason };
+  | {
+      type: 'unknown';
+      certainty: 'uncertain';
+      reason: ClassificationFailureReason;
+    };
 
 /**
  * Alternate trust data info - used when the non-primary atom format
@@ -206,40 +214,12 @@ export type Origin = {
   term_id: string;
 };
 
-/**
- * Trust triple data for an origin URL.
- * Simplified version of TripleWithPositions for display purposes.
- */
-export type OriginTriple = {
-  term_id: string;
-  term: {
-    vaults: {
-      term_id: string;
-      market_cap: string;
-      position_count: number;
-    }[];
-  };
-  counter_term: {
-    vaults: {
-      term_id: string;
-      market_cap: string;
-      position_count: number;
-    }[];
-  };
-  positions: { id: string; shares: string; account_id: string }[];
-  counter_positions: { id: string; shares: string; account_id: string }[];
-  /** User's own position on this triple (FOR side) */
-  user_position?: UserPositionData[];
-  /** User's own counter-position on this triple (AGAINST side) */
-  user_counter_position?: UserPositionData[];
-};
-
-// OriginType enum - mirrors AccountType pattern
+// OriginType enum — origin is now classified purely by atom presence; the
+// legacy trust-triple variants (Trustworthy % / FOR-AGAINST circle) are gone.
 export enum OriginType {
   NoOrigin = 'NoOrigin',
   NoAtom = 'OriginNoAtom',
-  AtomWithoutTrustTriple = 'OriginAtomWithoutTrustTriple',
-  AtomWithTrustTriple = 'OriginAtomWithTrustTriple',
+  HasAtom = 'OriginHasAtom',
 }
 
 /** Common props shared across all origin states */
@@ -248,8 +228,6 @@ type BaseOriginProps = {
   originUrl: string | undefined;
   /** Extracted hostname for display */
   hostname: string | undefined;
-  /** Trusted contacts who have positions on this origin's trust triple */
-  trustedCircle?: TrustedCirclePositions;
 };
 
 // Discriminated union types for proper OriginProps typing
@@ -257,22 +235,14 @@ export type OriginProps =
   | (BaseOriginProps & {
       originType: OriginType.NoOrigin;
       origin: null;
-      triple: null;
     })
   | (BaseOriginProps & {
       originType: OriginType.NoAtom;
       origin: null;
-      triple: null;
     })
   | (BaseOriginProps & {
-      originType: OriginType.AtomWithoutTrustTriple;
+      originType: OriginType.HasAtom;
       origin: Origin;
-      triple: null;
-    })
-  | (BaseOriginProps & {
-      originType: OriginType.AtomWithTrustTriple;
-      origin: Origin;
-      triple: OriginTriple;
     });
 
 // Helper type to extract props for a specific origin type

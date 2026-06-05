@@ -16,8 +16,13 @@
  * or use completely different URL structures for your explorer.
  */
 
-import { AccountType, PropsForAccountType, OriginType, PropsForOriginType } from '../types';
 import { chainConfig, type ChainConfig } from '../config';
+import type {
+  AccountType,
+  PropsForAccountType,
+  OriginType,
+  PropsForOriginType,
+} from '../types';
 import { addressToCaip10 } from '../util';
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -28,13 +33,13 @@ const VENDOR_NAME = 'Hive Mind Explorer';
 
 const EXPLORER_ORIGINS: Record<number, string> = {
   // Intuition Mainnet
-  1155: 'https://preview.explorer.hivemindhq.io',
+  1155: 'https://explorer.hivemindhq.io',
   // Intuition Testnet
   13579: 'https://testnet.explorer.hivemindhq.io',
 };
 
 // Get the base URL for the current chain (fallback to mainnet if chain not configured)
-const FALLBACK_URL = 'https://preview.explorer.hivemindhq.io';
+const FALLBACK_URL = 'https://explorer.hivemindhq.io';
 const baseUrl: string = EXPLORER_ORIGINS[chainConfig.chainId] ?? FALLBACK_URL;
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -49,9 +54,7 @@ type PropsWithAtom =
   | PropsForAccountType<AccountType.AtomWithTrustTriple>;
 
 /** Props for origin actions that require an origin atom to exist */
-type OriginPropsWithAtom =
-  | PropsForOriginType<OriginType.AtomWithoutTrustTriple>
-  | PropsForOriginType<OriginType.AtomWithTrustTriple>;
+type OriginPropsWithAtom = PropsForOriginType<OriginType.HasAtom>;
 
 export type VendorConfig = {
   name: string;
@@ -66,12 +69,12 @@ export type VendorConfig = {
 
   /** Generate URL when atom exists but no trust triple */
   atomWithoutTrustTriple: (
-    props: PropsForAccountType<AccountType.AtomWithoutTrustTriple>
+    props: PropsForAccountType<AccountType.AtomWithoutTrustTriple>,
   ) => UrlResult;
 
   /** Generate URL when trust triple exists (for staking) */
   atomWithTrustTriple: (
-    props: PropsForAccountType<AccountType.AtomWithTrustTriple>
+    props: PropsForAccountType<AccountType.AtomWithTrustTriple>,
   ) => UrlResult;
 
   /** Generate URL for viewing atom details */
@@ -86,16 +89,6 @@ export type VendorConfig = {
 
   /** Generate URL when no atom exists for the origin URL (unknown dApp) */
   originNoAtom: (props: PropsForOriginType<OriginType.NoAtom>) => UrlResult;
-
-  /** Generate URL when origin atom exists but no trust triple */
-  originAtomWithoutTrustTriple: (
-    props: PropsForOriginType<OriginType.AtomWithoutTrustTriple>
-  ) => UrlResult;
-
-  /** Generate URL when origin trust triple exists (for staking) */
-  originAtomWithTrustTriple: (
-    props: PropsForOriginType<OriginType.AtomWithTrustTriple>
-  ) => UrlResult;
 
   /** Generate URL for viewing origin atom details */
   viewOriginAtom: (props: OriginPropsWithAtom) => UrlResult;
@@ -112,8 +105,16 @@ export type VendorConfig = {
 /**
  * Resolves the address to use in outbound URLs.
  * Contracts use CAIP-10 (chain-specific identity), EOAs use plain 0x.
+ * @param params
+ * @param params.address
+ * @param params.isContract
+ * @param params.chainId
  */
-const resolveAddressForUrl = (params: { address: string; isContract: boolean; chainId: string }): string => {
+const resolveAddressForUrl = (params: {
+  address: string;
+  isContract: boolean;
+  chainId: string;
+}): string => {
   if (params.isContract) {
     return addressToCaip10(params.address, params.chainId);
   }
@@ -142,6 +143,7 @@ export const vendorConfig: VendorConfig = {
    * No atom exists for this address.
    * Link to address page with ?action=trust to open create claim modal.
    * Contracts use CAIP-10 format; EOAs use plain 0x.
+   * @param params
    */
   noAtom: (params) => {
     const resolvedAddress = resolveAddressForUrl(params);
@@ -156,6 +158,7 @@ export const vendorConfig: VendorConfig = {
    * Atom exists but no trust triple.
    * Link to address page with ?action=trust.
    * Contracts use CAIP-10 format; EOAs use plain 0x.
+   * @param params
    */
   atomWithoutTrustTriple: (params) => {
     const resolvedAddress = resolveAddressForUrl(params);
@@ -170,6 +173,7 @@ export const vendorConfig: VendorConfig = {
    * Trust triple exists.
    * Link to address page with ?action=trust.
    * Contracts use CAIP-10 format; EOAs use plain 0x.
+   * @param params
    */
   atomWithTrustTriple: (params) => {
     const resolvedAddress = resolveAddressForUrl(params);
@@ -183,6 +187,7 @@ export const vendorConfig: VendorConfig = {
   /**
    * View address details page.
    * Contracts use CAIP-10 format; EOAs use plain 0x.
+   * @param params
    */
   viewAtom: (params) => {
     const resolvedAddress = resolveAddressForUrl(params);
@@ -194,6 +199,7 @@ export const vendorConfig: VendorConfig = {
    * Create an alias for an address.
    * Link to address page with ?action=alias.
    * Contracts use CAIP-10 format; EOAs use plain 0x.
+   * @param params
    */
   createAlias: (params) => {
     const resolvedAddress = resolveAddressForUrl(params);
@@ -229,6 +235,7 @@ export const vendorConfig: VendorConfig = {
    * 1. Detect no atom exists
    * 2. Open CreateClaimModal with subjectData (hostname)
    * 3. Modal creates atom + trust triple in one flow
+   * @param params
    */
   originNoAtom: (params) => {
     const { hostname } = params;
@@ -245,58 +252,9 @@ export const vendorConfig: VendorConfig = {
   },
 
   /**
-   * Origin atom exists but no trust triple.
-   * Link to domain page with ?action=trust.
-   *
-   * Uses hostname for consistency with subdomain-level precision.
-   *
-   * The Explorer will:
-   * 1. Detect atom exists but no trust triple
-   * 2. Open CreateClaimModal with preselectedType='trust'
-   * 3. Modal creates trust triple
-   */
-  originAtomWithoutTrustTriple: (params) => {
-    const { hostname, origin } = params;
-
-    // Prefer hostname (what the user is actually visiting)
-    // Fall back to origin atom's data if hostname not available
-    const domainToUse = hostname || origin?.data || origin?.label;
-    if (!domainToUse) throw new Error('originAtomWithoutTrustTriple: no hostname or origin data');
-
-    const url = new URL(`/domain/${encodeURIComponent(domainToUse)}`, baseUrl);
-    url.searchParams.set('action', 'trust');
-
-    return { url: url.toString() };
-  },
-
-  /**
-   * Origin trust triple exists.
-   * Link to domain page with ?action=trust.
-   *
-   * Uses hostname for consistency with subdomain-level precision.
-   *
-   * The Explorer will:
-   * 1. Detect trust triple exists
-   * 2. Open CreateClaimModal with existingTripleId
-   * 3. User goes directly to staking step
-   */
-  originAtomWithTrustTriple: (params) => {
-    const { hostname, origin } = params;
-
-    // Prefer hostname (what the user is actually visiting)
-    // Fall back to origin atom's data if hostname not available
-    const domainToUse = hostname || origin?.data || origin?.label;
-    if (!domainToUse) throw new Error('originAtomWithTrustTriple: no hostname or origin data');
-
-    const url = new URL(`/domain/${encodeURIComponent(domainToUse)}`, baseUrl);
-    url.searchParams.set('action', 'trust');
-
-    return { url: url.toString() };
-  },
-
-  /**
    * View origin atom details page.
    * Uses hostname for subdomain-level precision.
+   * @param params
    */
   viewOriginAtom: (params) => {
     const { hostname, origin } = params;
@@ -304,9 +262,16 @@ export const vendorConfig: VendorConfig = {
     // Prefer hostname (what the user is actually visiting)
     // Fall back to origin atom's data if hostname not available
     const domainToUse = hostname || origin?.data || origin?.label;
-    if (!domainToUse) throw new Error('viewOriginAtom: no hostname or origin data');
+    if (!domainToUse) {
+      throw new Error('viewOriginAtom: no hostname or origin data');
+    }
 
-    return { url: new URL(`/domain/${encodeURIComponent(domainToUse)}`, baseUrl).toString() };
+    return {
+      url: new URL(
+        `/domain/${encodeURIComponent(domainToUse)}`,
+        baseUrl,
+      ).toString(),
+    };
   },
 };
 

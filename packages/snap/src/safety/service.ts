@@ -13,12 +13,19 @@
  * @module safety/service
  */
 
-import { graphQLQuery, getSafetyClaimsAboutAtomQuery } from '../queries';
-import { SAFETY_PREDICATE_IDS, SAFETY_OBJECT_IDS, MIN_BRIDGES } from '../config';
 import type { ClaimTemplateRegistry } from '../claim-templates';
-import type { TrustedContact, ExtendedContact } from '../trusted-circle/types';
+import {
+  SAFETY_PREDICATE_IDS,
+  SAFETY_OBJECT_IDS,
+  MIN_BRIDGES,
+} from '../config';
+import type {
+  PublisherWhitelistRegistry,
+  Publisher,
+} from '../publisher-whitelist/types';
+import { graphQLQuery, getSafetyClaimsAboutAtomQuery } from '../queries';
 import { toChecksum } from '../trusted-circle/service';
-import type { PublisherWhitelistRegistry, Publisher } from '../publisher-whitelist/types';
+import type { TrustedContact, ExtendedContact } from '../trusted-circle/types';
 import type {
   SafetyData,
   SafetySignal,
@@ -52,9 +59,9 @@ const HARD_OBJECTS: Record<
   string,
   { critical: boolean; entities: SafetyEntity[] }
 > = {
-  scam: { critical: true, entities: ['eoa', 'contract'] },
-  phishing: { critical: true, entities: ['eoa', 'contract'] },
-  drainer: { critical: true, entities: ['eoa', 'contract'] },
+  scam: { critical: true, entities: ['eoa', 'contract', 'site'] },
+  phishing: { critical: true, entities: ['eoa', 'contract', 'site'] },
+  drainer: { critical: true, entities: ['eoa', 'contract', 'site'] },
   honeypot: { critical: true, entities: ['contract'] },
   exploit: { critical: true, entities: ['contract'] },
   sybil: { critical: true, entities: ['eoa'] },
@@ -69,7 +76,7 @@ const SOFT_OBJECTS: Record<string, { entities: SafetyEntity[] }> = {
   malicious: { entities: ['eoa', 'contract'] },
   scammer: { entities: ['eoa', 'contract'] },
   bot: { entities: ['eoa'] },
-  impersonation: { entities: ['eoa'] },
+  impersonation: { entities: ['eoa', 'site'] },
 };
 
 /** Provenance/identity predicate metadata, keyed by registry predicate key. */
@@ -80,12 +87,12 @@ const PROVENANCE_PREDICATES: Record<string, { entities: SafetyEntity[] }> = {
   sameAs: { entities: ['eoa'] },
 };
 
-interface SafetyAccountRef {
+type SafetyAccountRef = {
   id: string;
   label: string;
-}
+};
 
-interface SafetyTriple {
+type SafetyTriple = {
   term_id: string;
   predicate_id: string;
   object_id: string;
@@ -93,32 +100,50 @@ interface SafetyTriple {
   creator: SafetyAccountRef | null;
   predicate: { label: string } | null;
   object: { label: string } | null;
-  positions: { account_id: string; shares: string; account: SafetyAccountRef | null }[];
+  positions: {
+    account_id: string;
+    shares: string;
+    account: SafetyAccountRef | null;
+  }[];
   counter_positions: { account_id: string; shares: string }[];
-}
+};
 
-interface SafetyQueryResponse {
+type SafetyQueryResponse = {
   data: { triples: SafetyTriple[] };
-}
+};
 
 const isEvmAddress = (value: string | null | undefined): value is string =>
   !!value && /^0x[a-fA-F0-9]{40}$/u.test(value);
 
 const formatAddress = (address: string): string =>
-  isEvmAddress(address) ? `${address.slice(0, 6)}...${address.slice(-4)}` : address;
+  isEvmAddress(address)
+    ? `${address.slice(0, 6)}...${address.slice(-4)}`
+    : address;
 
 /** Cheap lookup structures for the 2-hop extended network (see trusted-circle). */
-export interface ExtendedNetworkIndex {
+export type ExtendedNetworkIndex = {
   ids: Set<string>;
   byAddress: Map<string, ExtendedContact>;
-}
+};
 
-export interface GetSafetyDataOptions {
+export type GetSafetyDataOptions = {
   registry: ClaimTemplateRegistry;
   trustedCircle: TrustedContact[];
   whitelist: PublisherWhitelistRegistry;
   userAddress?: string | undefined;
-  isContract: boolean;
+  /**
+   * Whether the subject address is a contract (vs an EOA). Used to derive the
+   * entity type when `entity` is not provided explicitly. Optional so callers
+   * scoping a non-address subject (e.g. a site origin) can pass `entity` instead.
+   */
+  isContract?: boolean;
+  /**
+   * Explicit entity type for the subject atom. When provided it takes precedence
+   * over `isContract`; otherwise the entity is derived from `isContract`
+   * (`true` → 'contract', else 'eoa'). Used to scope the vocabulary to a
+   * non-address subject such as a site origin (`'site'`).
+   */
+  entity?: SafetyEntity | undefined;
   /**
    * Optional 2-hop extended-network index. When present, an asserting account
    * that is neither whitelisted nor in the 1-hop trust circle but reachable via
@@ -126,7 +151,7 @@ export interface GetSafetyDataOptions {
    * a separate, clearly-labeled 2nd-degree block; it never gates critical.
    */
   extendedIndex?: ExtendedNetworkIndex | undefined;
-}
+};
 
 /**
  * Fetches and classifies safety signals about a subject atom.
@@ -139,15 +164,25 @@ export async function getSafetyData(
   subjectAtomTermId: string,
   options: GetSafetyDataOptions,
 ): Promise<SafetyData | undefined> {
-  const { registry, trustedCircle, whitelist, userAddress, isContract, extendedIndex } =
-    options;
-  const entity: SafetyEntity = isContract ? 'contract' : 'eoa';
+  const {
+    registry,
+    trustedCircle,
+    whitelist,
+    userAddress,
+    isContract,
+    entity: entityOption,
+    extendedIndex,
+  } = options;
+  const entity: SafetyEntity =
+    entityOption ?? (isContract ? 'contract' : 'eoa');
 
   // Resolve term IDs: prefer the live registry, fall back to shared constants.
   const objId = (key: string): string | undefined =>
-    registry.objects?.[key] ?? (SAFETY_OBJECT_IDS as Record<string, string>)[key];
+    registry.objects?.[key] ??
+    (SAFETY_OBJECT_IDS as Record<string, string>)[key];
   const predId = (key: string): string | undefined =>
-    registry.predicates?.[key] ?? (SAFETY_PREDICATE_IDS as Record<string, string>)[key];
+    registry.predicates?.[key] ??
+    (SAFETY_PREDICATE_IDS as Record<string, string>)[key];
 
   const reportedForId = predId('reportedFor');
   const hasTagId = predId('hasTag');
@@ -170,17 +205,23 @@ export async function getSafetyData(
   const hardIdToKey = new Map<string, string>();
   for (const key of Object.keys(HARD_OBJECTS)) {
     const id = objId(key);
-    if (id) hardIdToKey.set(id, key);
+    if (id) {
+      hardIdToKey.set(id, key);
+    }
   }
   const softIdToKey = new Map<string, string>();
   for (const key of Object.keys(SOFT_OBJECTS)) {
     const id = objId(key);
-    if (id) softIdToKey.set(id, key);
+    if (id) {
+      softIdToKey.set(id, key);
+    }
   }
   const provPredIdToKey = new Map<string, string>();
   for (const key of Object.keys(PROVENANCE_PREDICATES)) {
     const id = predId(key);
-    if (id) provPredIdToKey.set(id, key);
+    if (id) {
+      provPredIdToKey.set(id, key);
+    }
   }
 
   const softObjectIds = Array.from(softIdToKey.keys());
@@ -238,7 +279,10 @@ export async function getSafetyData(
   const accountLabelMap = new Map<string, string>();
   for (const triple of triples) {
     if (triple.creator?.id && triple.creator.label) {
-      accountLabelMap.set(triple.creator.id.toLowerCase(), triple.creator.label);
+      accountLabelMap.set(
+        triple.creator.id.toLowerCase(),
+        triple.creator.label,
+      );
     }
     for (const p of triple.positions || []) {
       if (p.account?.id && p.account.label) {
@@ -254,7 +298,7 @@ export async function getSafetyData(
    *
    * @param address - lowercased asserting address
    * @param fallback - optional label to consider before the address (e.g. a
-   *   trust-circle contact's stored label)
+   * trust-circle contact's stored label)
    */
   const resolveLabel = (address: string, fallback?: string): string => {
     const candidate = accountLabelMap.get(address) ?? fallback;
@@ -270,9 +314,13 @@ export async function getSafetyData(
   for (const triple of triples) {
     // Collect asserting accounts: the creator plus everyone staking FOR.
     const authorAddresses = new Set<string>();
-    if (triple.creator_id) authorAddresses.add(triple.creator_id.toLowerCase());
+    if (triple.creator_id) {
+      authorAddresses.add(triple.creator_id.toLowerCase());
+    }
     for (const p of triple.positions || []) {
-      if (p.account_id) authorAddresses.add(p.account_id.toLowerCase());
+      if (p.account_id) {
+        authorAddresses.add(p.account_id.toLowerCase());
+      }
     }
 
     const predicateLabel = triple.predicate?.label || 'unknown';
@@ -282,7 +330,9 @@ export async function getSafetyData(
     const provKey = provPredIdToKey.get(triple.predicate_id);
     if (provKey) {
       const provMeta = PROVENANCE_PREDICATES[provKey];
-      if (!provMeta || !provMeta.entities.includes(entity)) continue;
+      if (!provMeta || !provMeta.entities.includes(entity)) {
+        continue;
+      }
       const authors = buildAuthors(
         authorAddresses,
         whitelistMap,
@@ -316,9 +366,13 @@ export async function getSafetyData(
     // --- Hard lane (reported for) -------------------------------------------
     if (triple.predicate_id === reportedForId) {
       const hardKey = hardIdToKey.get(triple.object_id);
-      if (!hardKey) continue;
+      if (!hardKey) {
+        continue;
+      }
       const meta = HARD_OBJECTS[hardKey];
-      if (!meta || !meta.entities.includes(entity)) continue;
+      if (!meta || !meta.entities.includes(entity)) {
+        continue;
+      }
 
       const authors = buildAuthors(
         authorAddresses,
@@ -377,9 +431,13 @@ export async function getSafetyData(
     // --- Soft lane (has tag -> safety object) -------------------------------
     if (triple.predicate_id === hasTagId) {
       const softKey = softIdToKey.get(triple.object_id);
-      if (!softKey) continue;
+      if (!softKey) {
+        continue;
+      }
       const softMeta = SOFT_OBJECTS[softKey];
-      if (!softMeta || !softMeta.entities.includes(entity)) continue;
+      if (!softMeta || !softMeta.entities.includes(entity)) {
+        continue;
+      }
 
       const authors = buildAuthors(
         authorAddresses,
@@ -432,7 +490,11 @@ export async function getSafetyData(
     provenance: provenance.length,
   });
 
-  if (critical.length === 0 && warnings.length === 0 && provenance.length === 0) {
+  if (
+    critical.length === 0 &&
+    warnings.length === 0 &&
+    provenance.length === 0
+  ) {
     dbg(
       'all in-scope triples were suppressed (anonymous: not from whitelist or trust circle)',
     );
@@ -456,9 +518,9 @@ export async function getSafetyData(
  * @param normalizedUser - the current user's lowercased address (excluded)
  * @param category - optional hard-report category for scope filtering
  * @param extendedIndex - optional 2-hop index; an asserting account that is not
- *   whitelisted and not in the 1-hop trust circle but is reachable via
- *   ≥ MIN_BRIDGES distinct follows is recorded as a degree-2 author. Stake is
- *   never read here — bridge count is the only 2-hop weight.
+ * whitelisted and not in the 1-hop trust circle but is reachable via
+ * ≥ MIN_BRIDGES distinct follows is recorded as a degree-2 author. Stake is
+ * never read here — bridge count is the only 2-hop weight.
  */
 function buildAuthors(
   authorAddresses: Set<string>,
@@ -480,7 +542,9 @@ function buildAuthors(
   let fromExtendedNetwork = false;
 
   for (const address of authorAddresses) {
-    if (address === normalizedUser) continue;
+    if (address === normalizedUser) {
+      continue;
+    }
 
     const publisher = whitelistMap.get(address);
     if (publisher && publisherCoversCategory(publisher, category)) {
@@ -540,9 +604,18 @@ function buildAuthors(
 /**
  * Whether a publisher's scopes cover the given report category.
  * No scopes (empty/undefined) means the authority covers all categories.
+ * @param publisher
+ * @param category
  */
-function publisherCoversCategory(publisher: Publisher, category?: string): boolean {
-  if (!category) return true;
-  if (!publisher.scopes || publisher.scopes.length === 0) return true;
+function publisherCoversCategory(
+  publisher: Publisher,
+  category?: string,
+): boolean {
+  if (!category) {
+    return true;
+  }
+  if (!publisher.scopes || publisher.scopes.length === 0) {
+    return true;
+  }
   return (publisher.scopes as string[]).includes(category);
 }

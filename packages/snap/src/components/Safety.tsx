@@ -42,6 +42,7 @@ const SOURCE_TIERS: { source: SafetySource; label: string }[] = [
  * Formats the attribution authors into a short readable string.
  * Authors are shown by their on-chain identity (ENS name, else truncated
  * hex address), e.g. "alice.eth, 0x1234...5678 +2 more".
+ * @param authors
  */
 function formatAuthors(authors: SafetyAuthor[]): string {
   if (authors.length === 0) {
@@ -57,6 +58,7 @@ function formatAuthors(authors: SafetyAuthor[]): string {
 /**
  * Largest number of the viewer's follows that bridge to any single degree-2
  * author in a group — the "via N follows" path strength for the extended tier.
+ * @param authors
  */
 function maxVia(authors: SafetyAuthor[]): number {
   let max = 0;
@@ -117,10 +119,13 @@ function attributionRows(
  * Whether a signal's only attribution is the extended network (degree-2) — i.e.
  * no whitelisted authority and no 1-hop trust-circle author backs it. These
  * render in a separate, lower-weight 2nd-degree block.
+ * @param signal
  */
 function isExtendedOnly(signal: SafetySignal): boolean {
   return (
-    signal.fromExtendedNetwork && !signal.fromWhitelist && !signal.fromTrustCircle
+    signal.fromExtendedNetwork &&
+    !signal.fromWhitelist &&
+    !signal.fromTrustCircle
   );
 }
 
@@ -128,6 +133,7 @@ function isExtendedOnly(signal: SafetySignal): boolean {
  * Counts the distinct bridges backing a degree-2 signal: the largest number of
  * the viewer's follows reaching any single degree-2 author on it. This is the
  * 2-hop "path strength" — stake is never consulted.
+ * @param signal
  */
 function maxBridgeCount(signal: SafetySignal): number {
   let max = 0;
@@ -143,6 +149,7 @@ function maxBridgeCount(signal: SafetySignal): number {
  * Bridge-aware attribution for a 2nd-degree signal. Makes the transitive nature
  * legible ("accounts your follows trust") rather than implying a direct
  * endorsement.
+ * @param signal
  */
 function extendedAttribution(signal: SafetySignal): string {
   const bridges = maxBridgeCount(signal);
@@ -155,6 +162,8 @@ function extendedAttribution(signal: SafetySignal): string {
  * Critical authority reports — rendered as a prominent error-styled section.
  * (The SDK `Banner` component is not available in this snaps-sdk version, so we
  * use a `Section` with error-variant rows to convey the danger.)
+ * @param options0
+ * @param options0.signals
  */
 const CriticalReports = ({ signals }: { signals: SafetySignal[] }) => {
   if (signals.length === 0) {
@@ -174,6 +183,8 @@ const CriticalReports = ({ signals }: { signals: SafetySignal[] }) => {
 
 /**
  * Soft flags + non-critical hard reports — rendered as caution rows.
+ * @param options0
+ * @param options0.signals
  */
 const SafetyWarnings = ({ signals }: { signals: SafetySignal[] }) => {
   if (signals.length === 0) {
@@ -196,6 +207,8 @@ const SafetyWarnings = ({ signals }: { signals: SafetySignal[] }) => {
  * BELOW the 1st-degree warnings and never in the critical banner. Each row is
  * gated upstream by MIN_BRIDGES and labeled with the bridge count to make the
  * transitive (friend-of-a-friend) nature explicit.
+ * @param options0
+ * @param options0.signals
  */
 const ExtendedWarnings = ({ signals }: { signals: SafetySignal[] }) => {
   if (signals.length === 0) {
@@ -215,6 +228,8 @@ const ExtendedWarnings = ({ signals }: { signals: SafetySignal[] }) => {
 
 /**
  * Provenance / identity signals — rendered as informational rows.
+ * @param options0
+ * @param options0.signals
  */
 const Provenance = ({ signals }: { signals: SafetySignal[] }) => {
   if (signals.length === 0) {
@@ -240,6 +255,8 @@ const Provenance = ({ signals }: { signals: SafetySignal[] }) => {
 /**
  * 2nd-degree (extended-network) provenance — enrichment only, in its own block
  * below the 1st-degree provenance. Never changes whether a 1st-degree row shows.
+ * @param options0
+ * @param options0.signals
  */
 const ExtendedProvenance = ({ signals }: { signals: SafetySignal[] }) => {
   if (signals.length === 0) {
@@ -334,6 +351,67 @@ export const renderExtendedSafety = (safety: SafetyData | undefined) => {
 
   return (
     <Box>
+      <ExtendedWarnings signals={extendedWarnings} />
+      <ExtendedProvenance signals={extendedProvenance} />
+    </Box>
+  );
+};
+
+/**
+ * Renders ONLY the critical authority reports (the danger banner). Used by the
+ * dApp-origin surface, which shows critical reports inline on the primary view
+ * and pushes everything else behind "More info". Returns null when there are no
+ * critical reports.
+ *
+ * @param safety - Categorized safety data.
+ * @returns JSX element or null.
+ */
+export const renderCriticalSafety = (safety: SafetyData | undefined) => {
+  if (!safety || safety.critical.length === 0) {
+    return null;
+  }
+
+  return (
+    <Box>
+      <CriticalReports signals={safety.critical} />
+    </Box>
+  );
+};
+
+/**
+ * Renders the NON-CRITICAL safety block: every warning and provenance signal
+ * EXCEPT the critical danger banner — 1st-degree warnings + provenance and the
+ * 2nd-degree (extended-network) warnings + provenance, partitioned exactly like
+ * {@link renderPrimarySafety} / {@link renderExtendedSafety}. Used by the
+ * dApp-origin "More info" surface (critical reports are shown inline up top).
+ * Returns null when there is nothing non-critical.
+ *
+ * @param safety - Categorized safety data.
+ * @returns JSX element or null.
+ */
+export const renderNonCriticalSafety = (safety: SafetyData | undefined) => {
+  if (!safety) {
+    return null;
+  }
+  const {
+    primaryWarnings,
+    extendedWarnings,
+    primaryProvenance,
+    extendedProvenance,
+  } = splitSafety(safety);
+  if (
+    primaryWarnings.length === 0 &&
+    extendedWarnings.length === 0 &&
+    primaryProvenance.length === 0 &&
+    extendedProvenance.length === 0
+  ) {
+    return null;
+  }
+
+  return (
+    <Box>
+      <SafetyWarnings signals={primaryWarnings} />
+      <Provenance signals={primaryProvenance} />
       <ExtendedWarnings signals={extendedWarnings} />
       <ExtendedProvenance signals={extendedProvenance} />
     </Box>

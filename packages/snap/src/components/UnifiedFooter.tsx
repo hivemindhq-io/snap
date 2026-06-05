@@ -1,37 +1,29 @@
 import { Box, Divider } from '@metamask/snaps-sdk/jsx';
-import { AccountProps, OriginProps, OriginType } from '../types';
+
+import type { AccountProps, OriginProps } from '../types';
 import { CreateTrustTriple } from './Footer/actions/CreateTrustTriple';
 import { StakePrompt } from './Footer/actions/StakePrompt';
 import { ViewMore } from './Footer/actions/ViewMore';
-import { OriginViewMore } from './OriginFooter/actions/OriginViewMore';
-import { shouldSuppressOrigin } from '../util';
 
 /**
- * Unified footer component that renders all CTAs at the bottom.
- * Combines account (destination address) and origin (dApp) CTAs.
+ * Unified footer component that renders the destination-address CTAs at the
+ * bottom of the insight.
  *
- * Structure:
- * 1. Divider for visual separation
- * 2. Account CTAs (address-related actions)
- * 3. Origin "View more" link (dApp-related - voting CTAs are inline in Origin section)
+ * The dApp-origin CTA (add trust data / view on Hive Mind) is no longer here —
+ * it lives inline in the dApp {@link OriginBlock} "More info" section so the
+ * link sits next to the dApp's own trust signals.
  *
  * Each action component is self-gating: it returns null if conditions aren't met.
- *
- * Note: Origin voting/creation CTAs and "Add alias" are now inline within
- * their respective sections for better contextual UX.
+ * @param options0
+ * @param options0.accountProps
+ * @param options0.originProps
  */
 export const UnifiedFooter = ({
   accountProps,
-  originProps,
 }: {
   accountProps: AccountProps;
   originProps: OriginProps;
 }) => {
-  const hasOriginAtom =
-    !shouldSuppressOrigin(originProps.originUrl, originProps.hostname) &&
-    (originProps.originType === OriginType.AtomWithoutTrustTriple ||
-     originProps.originType === OriginType.AtomWithTrustTriple);
-
   return (
     <Box>
       <Divider />
@@ -48,11 +40,6 @@ export const UnifiedFooter = ({
 
         {/* Always: View more on vendor site */}
         <ViewMore {...accountProps} />
-
-        {/* ─────────────────────────────────────────────────────────────────
-         * Origin CTAs - Only "View more" (voting CTAs are inline in Origin section)
-         * ───────────────────────────────────────────────────────────────── */}
-        {hasOriginAtom && <OriginViewMore {...originProps} />}
       </Box>
     </Box>
   );
