@@ -553,13 +553,9 @@ export async function getNetworkFamiliarity(
     return undefined;
   }
 
-  const { hasTagAtomId, trustworthyAtomId } = chainConfig as ChainConfig;
-
   try {
     const response = (await graphQLQuery(getAllClaimsAboutAtomQuery, {
       subjectId: subjectAtomId,
-      excludePredicateId: hasTagAtomId,
-      excludeObjectId: trustworthyAtomId,
     })) as AllClaimsResponse;
 
     const triples = response?.data?.triples || [];

@@ -10,7 +10,10 @@ import { chainConfig } from './config';
  * @returns The GraphQL response data
  * @throws Error if the request fails or returns GraphQL errors
  */
-export const graphQLQuery = async (query: string, variables: Record<string, unknown>) => {
+export const graphQLQuery = async (
+  query: string,
+  variables: Record<string, unknown>,
+) => {
   const response = await fetch(chainConfig.backendUrl, {
     method: 'POST',
     headers: {
@@ -20,7 +23,9 @@ export const graphQLQuery = async (query: string, variables: Record<string, unkn
   });
 
   if (!response.ok) {
-    throw new Error(`GraphQL request failed: ${response.status} ${response.statusText}`);
+    throw new Error(
+      `GraphQL request failed: ${response.status} ${response.statusText}`,
+    );
   }
 
   const result = await response.json();
@@ -244,64 +249,6 @@ query OriginAtom($originUrl: String!) {
 `;
 
 /**
- * Query for origin trust triple data.
- * Simplified version of getTripleWithPositionsDataQuery for origin display.
- */
-export const getOriginTrustTripleQuery = `
-query OriginTrustTriple($subjectId: String!, $predicateId: String!, $objectId: String!, $userAddress: String!) {
-  triples(where: {
-    subject_id: { _eq: $subjectId },
-    predicate_id: { _eq: $predicateId },
-    object_id: { _eq: $objectId }
-  }) {
-    term_id
-
-    term {
-      vaults {
-        term_id
-        market_cap
-        position_count
-        curve_id
-      }
-    }
-
-    counter_term {
-      vaults {
-        term_id
-        market_cap
-        position_count
-        curve_id
-      }
-    }
-
-    positions(order_by: { shares: desc }, limit: 30) {
-      id
-      shares
-      account_id
-    }
-
-    counter_positions(order_by: { shares: desc }, limit: 30) {
-      id
-      shares
-      account_id
-    }
-
-    # User's specific position (if any)
-    user_position: positions(where: { account_id: { _ilike: $userAddress } }) {
-      account_id
-      shares
-    }
-
-    # User's specific counter-position (if any)
-    user_counter_position: counter_positions(where: { account_id: { _ilike: $userAddress } }) {
-      account_id
-      shares
-    }
-  }
-}
-`;
-
-/**
  * Query to get the user's trusted circle.
  *
  * The trust circle is the set of accounts the user *follows*, expressed as
@@ -419,22 +366,18 @@ query AtomsForAddresses($addresses: [String!]!) {
  * Query to find all triples where a given atom is the subject.
  * Used to discover any claims made about an address by anyone,
  * including the stakers (position holders) on each claim.
- * Excludes the trust triple (hasTag trustworthy) since that's displayed separately.
+ *
+ * The `has tag → trustworthy` triple is no longer special-cased; it flows
+ * through here as a regular claim alongside everything else.
  *
  * Returns predicate + object labels so we can show claim context
  * (e.g., "tagged as DeFi Protocol").
  */
 export const getAllClaimsAboutAtomQuery = `
-query AllClaimsAboutAtom($subjectId: String!, $excludePredicateId: String!, $excludeObjectId: String!) {
+query AllClaimsAboutAtom($subjectId: String!) {
   triples(
     where: {
-      subject_id: { _eq: $subjectId },
-      _not: {
-        _and: [
-          { predicate_id: { _eq: $excludePredicateId } },
-          { object_id: { _eq: $excludeObjectId } }
-        ]
-      }
+      subject_id: { _eq: $subjectId }
     },
     order_by: { triple_term: { total_market_cap: desc_nulls_last } },
     limit: 20

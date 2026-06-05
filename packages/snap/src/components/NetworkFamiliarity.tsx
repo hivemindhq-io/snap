@@ -1,8 +1,7 @@
 /**
  * Network Familiarity UI Component.
  *
- * Displays trusted contacts who have ANY claim about the target address,
- * beyond just the "hasTag trustworthy" triple shown in TrustedCircleSection.
+ * Displays trusted contacts who have ANY claim about the target address.
  *
  * This surfaces "people you trust who know something about this address,"
  * giving the user a lead to ask those contacts directly.
@@ -10,8 +9,19 @@
  * @module components/NetworkFamiliarity
  */
 
-import { Box, Row, Text, Heading, Section, Bold } from '@metamask/snaps-sdk/jsx';
-import type { FamiliarContact, NetworkFamiliarity } from '../trusted-circle/types';
+import {
+  Box,
+  Row,
+  Text,
+  Heading,
+  Section,
+  Bold,
+} from '@metamask/snaps-sdk/jsx';
+
+import type {
+  FamiliarContact,
+  NetworkFamiliarity,
+} from '../trusted-circle/types';
 
 const MAX_DISPLAY_CONTACTS = 3;
 const MAX_CLAIMS_PER_CONTACT = 2;
@@ -62,9 +72,9 @@ function formatClaimSummary(contact: FamiliarContact): string {
 /**
  * Props for NetworkFamiliaritySection.
  */
-export interface NetworkFamiliaritySectionProps {
+export type NetworkFamiliaritySectionProps = {
   networkFamiliarity: NetworkFamiliarity;
-}
+};
 
 /**
  * Displays trusted contacts who have made claims about the target address.
@@ -73,6 +83,7 @@ export interface NetworkFamiliaritySectionProps {
  * Hidden when no familiar contacts exist (rendering returns null).
  *
  * @param props - Component props with network familiarity data
+ * @param props.networkFamiliarity
  * @returns JSX element or null
  */
 export const NetworkFamiliaritySection = ({
@@ -111,6 +122,8 @@ export const NetworkFamiliaritySection = ({
  * viewer's follows bridge to it ("via N of your follows").
  *
  * Hidden when there are no extended contacts (returns null).
+ * @param options0
+ * @param options0.contacts
  */
 const ExtendedFamiliaritySection = ({
   contacts,
@@ -131,7 +144,9 @@ const ExtendedFamiliaritySection = ({
       {displayContacts.map((contact) => (
         <Row label={formatLabel(contact.label)}>
           <Text color="muted">
-            {`${formatClaimSummary(contact)} · via ${contact.bridgeCount ?? 0} of your follows`}
+            {`${formatClaimSummary(contact)} · via ${
+              contact.bridgeCount ?? 0
+            } of your follows`}
           </Text>
         </Row>
       ))}
