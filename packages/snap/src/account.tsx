@@ -10,13 +10,10 @@ import {
   Account,
   AccountType,
   TripleWithPositions,
-  AccountProps,
   AddressClassification,
   AlternateTrustData,
-  ClassificationFailureReason,
 } from './types';
 import { addressToCaip10 } from './util';
-import { AccountComponents } from './components';
 import { ChainId, Transaction } from '@metamask/snaps-sdk';
 
 export type GetAccountDataResult = {
@@ -329,11 +326,4 @@ export const getAccountType = (
   }
 
   return AccountType.AtomWithTrustTriple;
-};
-
-export const renderOnTransaction = (props: AccountProps) => {
-  const { accountType } = props;
-  // TypeScript now knows the exact prop shape for each accountType
-  const initialUI = AccountComponents[accountType](props as any);
-  return initialUI;
 };
