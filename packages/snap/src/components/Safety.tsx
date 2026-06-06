@@ -16,8 +16,7 @@ import {
   Box,
   Row,
   Text,
-  Heading,
-  Bold,
+  IconName,
   type JSXElement,
 } from '@metamask/snaps-sdk/jsx';
 
@@ -27,14 +26,37 @@ import type {
   SafetyAuthor,
   SafetySource,
 } from '../safety/types';
+import { SectionHeading } from './ui';
 
 const MAX_AUTHORS = 3;
 
-/** Display order + heading for each attribution tier (Option 2 sub-rows). */
-const SOURCE_TIERS: { source: SafetySource; label: string }[] = [
-  { source: 'authority', label: 'Authority' },
-  { source: 'follow', label: 'People you follow' },
-  { source: 'extended', label: 'Friends of people you follow' },
+/**
+ * Display order + label + an explainer for each attribution tier. The explainer
+ * is surfaced through the `Row` `tooltip` prop so the provenance of a signal
+ * ("who is vouching, and how do I know them") is legible without cluttering the
+ * row itself.
+ */
+const SOURCE_TIERS: {
+  source: SafetySource;
+  label: string;
+  tooltip: string;
+}[] = [
+  {
+    source: 'authority',
+    label: 'Authority',
+    tooltip: 'Reported by an allow-listed authority Hive Mind recognizes.',
+  },
+  {
+    source: 'follow',
+    label: 'People you follow',
+    tooltip: 'Reported by accounts you follow directly.',
+  },
+  {
+    source: 'extended',
+    label: 'Friends of people you follow',
+    tooltip:
+      'Reported by accounts your follows trust — a friend-of-a-friend signal.',
+  },
 ];
 
 /**
@@ -70,19 +92,23 @@ function maxVia(authors: SafetyAuthor[]): number {
 }
 
 /**
- * Option 2 attribution: one labeled sub-row per source tier (Authority / Your
- * follows / Extended network), so a whitelisted authority, a 1-hop follow, and
- * a friend-of-a-friend are never conflated into one flat list. Tiers with no
- * authors are omitted. The extended tier carries a "via N follows" suffix to
- * keep the transitive nature explicit. `color` matches the parent claim's tone.
+ * Per-tier attribution as VALID {@link Row} children. For each source tier with
+ * authors (Authority / People you follow / Friends of people you follow) this
+ * emits one `Row` whose label is the tier, whose single `Text` child names the
+ * authors (the only shape `Row` accepts — the previous `Box`-in-`Row` was a type
+ * violation that rendered flat), and whose `tooltip` explains the tier. The
+ * extended tier carries a "via N follows" suffix to keep the transitive nature
+ * explicit. `color`/`variant` match the parent claim's tone.
  *
  * @param signal - The classified safety signal.
  * @param color - Text color for the value lines ('error' | 'warning' | 'muted').
- * @returns A Box of per-tier Text lines, or null when there are no authors.
+ * @param variant - Row variant matching the claim tone.
+ * @returns A Box of one Row per populated tier, or null when no authors.
  */
 function attributionRows(
   signal: SafetySignal,
   color: 'error' | 'warning' | 'muted',
+  variant: 'default' | 'warning' | 'critical',
 ): JSXElement | null {
   const tiers = SOURCE_TIERS.map((tier) => ({
     tier,
@@ -104,10 +130,12 @@ function attributionRows(
             ? ` · via ${bridges} of your follows`
             : '';
         return (
-          <Text color={color}>
-            <Bold>{tier.label}:</Bold> {formatAuthors(authors)}
-            {suffix}
-          </Text>
+          <Row label={tier.label} variant={variant} tooltip={tier.tooltip}>
+            <Text color={color}>
+              {formatAuthors(authors)}
+              {suffix}
+            </Text>
+          </Row>
         );
       })}
     </Box>
@@ -170,11 +198,18 @@ const CriticalReports = ({ signals }: { signals: SafetySignal[] }) => {
   }
   return (
     <Box>
-      <Heading size="sm">⚠️ Safety Warning</Heading>
+      <SectionHeading icon={IconName.Danger}>Safety warning</SectionHeading>
       {signals.map((signal) => (
-        <Row label={`Reported: ${signal.objectLabel}`} variant="critical">
-          {attributionRows(signal, 'error') ?? <Text color="error"> </Text>}
-        </Row>
+        <Box>
+          <Row label="Reported" variant="critical">
+            <Text color="error">{signal.objectLabel}</Text>
+          </Row>
+          {attributionRows(signal, 'error', 'critical') ?? (
+            <Row label="Reported by" variant="critical">
+              <Text color="error"> </Text>
+            </Row>
+          )}
+        </Box>
       ))}
     </Box>
   );
@@ -191,11 +226,18 @@ const SafetyWarnings = ({ signals }: { signals: SafetySignal[] }) => {
   }
   return (
     <Box>
-      <Heading size="sm">Safety Flags</Heading>
+      <SectionHeading>Safety flags</SectionHeading>
       {signals.map((signal) => (
-        <Row label={signal.objectLabel} variant="warning">
-          {attributionRows(signal, 'warning') ?? <Text color="warning"> </Text>}
-        </Row>
+        <Box>
+          <Row label="Flagged" variant="warning">
+            <Text color="warning">{signal.objectLabel}</Text>
+          </Row>
+          {attributionRows(signal, 'warning', 'warning') ?? (
+            <Row label="Flagged by" variant="warning">
+              <Text color="warning"> </Text>
+            </Row>
+          )}
+        </Box>
       ))}
     </Box>
   );
@@ -215,9 +257,13 @@ const ExtendedWarnings = ({ signals }: { signals: SafetySignal[] }) => {
   }
   return (
     <Box>
-      <Heading size="sm">Flags from friends of people you follow</Heading>
+      <SectionHeading>Flags from friends of people you follow</SectionHeading>
       {signals.map((signal) => (
-        <Row label={signal.objectLabel} variant="warning">
+        <Row
+          label={signal.objectLabel}
+          variant="warning"
+          tooltip="Flagged by accounts your follows trust (friend-of-a-friend)."
+        >
           <Text color="warning">{extendedAttribution(signal)}</Text>
         </Row>
       ))}
@@ -236,7 +282,7 @@ const Provenance = ({ signals }: { signals: SafetySignal[] }) => {
   }
   return (
     <Box>
-      <Heading size="sm">Provenance</Heading>
+      <SectionHeading>Provenance</SectionHeading>
       {signals.map((signal) => (
         <Row label={signal.predicateLabel}>
           <Text color="muted">
@@ -263,7 +309,7 @@ const ExtendedProvenance = ({ signals }: { signals: SafetySignal[] }) => {
   }
   return (
     <Box>
-      <Heading size="sm">From friends of people you follow</Heading>
+      <SectionHeading>From friends of people you follow</SectionHeading>
       {signals.map((signal) => (
         <Row label={signal.predicateLabel}>
           <Text color="muted">
