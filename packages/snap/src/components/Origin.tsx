@@ -17,7 +17,7 @@
  * @module components/Origin
  */
 
-import { Text, Heading, Section, Link } from '@metamask/snaps-sdk/jsx';
+import { Text, Section, Link, Heading } from '@metamask/snaps-sdk/jsx';
 
 import type { SafetyData } from '../safety/types';
 import type { NetworkFamiliarity } from '../trusted-circle/types';
@@ -27,14 +27,17 @@ import { renderNetworkInsight } from './NetworkFamiliarity';
 import { renderCriticalSafety, renderNonCriticalSafety } from './Safety';
 
 /**
- * Heading for the dApp block, scoped to the hostname when known.
+ * Heading for the dApp block, scoped to the hostname when known. A plain `md`
+ * subject heading (no glyph) matching the {@link AddressBlock} "Destination"
+ * title — the hostname itself carries the identity, so an extra globe icon was
+ * just noise.
  *
  * @param props - The hostname to display.
  * @param props.hostname - The dApp hostname (e.g. "app.uniswap.org").
  * @returns The dApp heading.
  */
 const OriginHeading = ({ hostname }: { hostname: string | undefined }) => (
-  <Heading size="sm">{hostname ? `dApp · ${hostname}` : 'dApp'}</Heading>
+  <Heading size="md">{hostname ? `dApp · ${hostname}` : 'dApp'}</Heading>
 );
 
 /**

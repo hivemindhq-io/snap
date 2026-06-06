@@ -14,7 +14,7 @@
  * @module components/EmptyState
  */
 
-import { Section, Text } from '@metamask/snaps-sdk/jsx';
+import { Section, Text, Heading } from '@metamask/snaps-sdk/jsx';
 
 import { isFirstPartyExtensionOrigin } from '../util';
 
@@ -28,6 +28,7 @@ import { isFirstPartyExtensionOrigin } from '../util';
  */
 export const EmptyStateNotice = () => (
   <Section>
+    <Heading size="md">No signals yet</Heading>
     <Text>No community signals on this address yet — not an endorsement.</Text>
     <Text>
       Spotted a scam — or know it&apos;s safe? Add the first claim to warn

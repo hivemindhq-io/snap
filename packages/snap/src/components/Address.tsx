@@ -18,7 +18,7 @@
  * @module components/Address
  */
 
-import { Heading, Section } from '@metamask/snaps-sdk/jsx';
+import { Box, Heading, Section, Address } from '@metamask/snaps-sdk/jsx';
 
 import type { SafetyData } from '../safety/types';
 import type { NetworkFamiliarity } from '../trusted-circle/types';
@@ -28,51 +28,37 @@ import {
   renderExtendedFamiliarity,
 } from './NetworkFamiliarity';
 import { renderPrimarySafety, renderExtendedSafety } from './Safety';
-
-const ADDRESS_PREFIX_LEN = 6;
-const ADDRESS_SUFFIX_LEN = 4;
+import { isHexAddress } from './ui';
 
 /**
- * Truncates a hex address for display ("0x1234…cdef"). Short or non-hex strings
- * are returned unchanged.
- *
- * @param address - The destination address.
- * @returns The truncated address.
- */
-function truncateAddress(address: string): string {
-  if (address.length <= ADDRESS_PREFIX_LEN + ADDRESS_SUFFIX_LEN) {
-    return address;
-  }
-  return `${address.slice(0, ADDRESS_PREFIX_LEN)}…${address.slice(
-    -ADDRESS_SUFFIX_LEN,
-  )}`;
-}
-
-/**
- * The display label for the address card: the on-chain alias/ENS name when
- * known, otherwise the truncated hex address.
- *
- * @param accountProps - Account props (carries alias + address).
- * @returns The header label.
- */
-function addressLabel(accountProps: AccountProps): string {
-  const alias = accountProps.alias?.trim();
-  if (alias) {
-    return alias;
-  }
-  return truncateAddress(accountProps.address);
-}
-
-/**
- * Heading for the address card, scoped to the alias/address.
+ * Heading for the address card: a plain "Destination" label (`md` subject
+ * heading — no glyph) above the destination rendered with the
+ * {@link Address} primitive for canonical truncation + any saved display name.
+ * The avatar is intentionally OFF to keep the surface calm; the single
+ * "Destination" label is enough to identify the subject. Falls back to a plain
+ * alias/address heading when the destination isn't a bare hex address the
+ * primitive can resolve.
  *
  * @param props - Props.
  * @param props.accountProps - Account props for the label.
  * @returns The address heading.
  */
-const AddressHeading = ({ accountProps }: { accountProps: AccountProps }) => (
-  <Heading size="sm">{`Address · ${addressLabel(accountProps)}`}</Heading>
-);
+const AddressHeading = ({ accountProps }: { accountProps: AccountProps }) => {
+  if (isHexAddress(accountProps.address)) {
+    return (
+      <Box>
+        <Heading size="md">Destination</Heading>
+        <Address address={accountProps.address} displayName avatar={false} />
+      </Box>
+    );
+  }
+  const alias = accountProps.alias?.trim();
+  return (
+    <Heading size="md">
+      {alias ? `Destination · ${alias}` : 'Destination'}
+    </Heading>
+  );
+};
 
 /**
  * Renders the destination-address subject card.
