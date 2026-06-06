@@ -17,7 +17,6 @@ import {
   Row,
   Text,
   Heading,
-  Section,
   Bold,
   type JSXElement,
 } from '@metamask/snaps-sdk/jsx';
@@ -34,8 +33,8 @@ const MAX_AUTHORS = 3;
 /** Display order + heading for each attribution tier (Option 2 sub-rows). */
 const SOURCE_TIERS: { source: SafetySource; label: string }[] = [
   { source: 'authority', label: 'Authority' },
-  { source: 'follow', label: 'Your follows' },
-  { source: 'extended', label: 'Extended network' },
+  { source: 'follow', label: 'People you follow' },
+  { source: 'extended', label: 'Friends of people you follow' },
 ];
 
 /**
@@ -154,8 +153,8 @@ function maxBridgeCount(signal: SafetySignal): number {
 function extendedAttribution(signal: SafetySignal): string {
   const bridges = maxBridgeCount(signal);
   return bridges > 0
-    ? `From your extended network · via ${bridges} of your follows`
-    : 'From your extended network';
+    ? `From friends of people you follow · via ${bridges} of your follows`
+    : 'From friends of people you follow';
 }
 
 /**
@@ -170,14 +169,14 @@ const CriticalReports = ({ signals }: { signals: SafetySignal[] }) => {
     return null;
   }
   return (
-    <Section>
+    <Box>
       <Heading size="sm">⚠️ Safety Warning</Heading>
       {signals.map((signal) => (
         <Row label={`Reported: ${signal.objectLabel}`} variant="critical">
           {attributionRows(signal, 'error') ?? <Text color="error"> </Text>}
         </Row>
       ))}
-    </Section>
+    </Box>
   );
 };
 
@@ -191,14 +190,14 @@ const SafetyWarnings = ({ signals }: { signals: SafetySignal[] }) => {
     return null;
   }
   return (
-    <Section>
+    <Box>
       <Heading size="sm">Safety Flags</Heading>
       {signals.map((signal) => (
         <Row label={signal.objectLabel} variant="warning">
           {attributionRows(signal, 'warning') ?? <Text color="warning"> </Text>}
         </Row>
       ))}
-    </Section>
+    </Box>
   );
 };
 
@@ -215,14 +214,14 @@ const ExtendedWarnings = ({ signals }: { signals: SafetySignal[] }) => {
     return null;
   }
   return (
-    <Section>
-      <Heading size="sm">Extended Network Flags · 2nd-degree</Heading>
+    <Box>
+      <Heading size="sm">Flags from friends of people you follow</Heading>
       {signals.map((signal) => (
         <Row label={signal.objectLabel} variant="warning">
           <Text color="warning">{extendedAttribution(signal)}</Text>
         </Row>
       ))}
-    </Section>
+    </Box>
   );
 };
 
@@ -236,7 +235,7 @@ const Provenance = ({ signals }: { signals: SafetySignal[] }) => {
     return null;
   }
   return (
-    <Section>
+    <Box>
       <Heading size="sm">Provenance</Heading>
       {signals.map((signal) => (
         <Row label={signal.predicateLabel}>
@@ -248,7 +247,7 @@ const Provenance = ({ signals }: { signals: SafetySignal[] }) => {
           </Text>
         </Row>
       ))}
-    </Section>
+    </Box>
   );
 };
 
@@ -263,8 +262,8 @@ const ExtendedProvenance = ({ signals }: { signals: SafetySignal[] }) => {
     return null;
   }
   return (
-    <Section>
-      <Heading size="sm">Extended Network · 2nd-degree</Heading>
+    <Box>
+      <Heading size="sm">From friends of people you follow</Heading>
       {signals.map((signal) => (
         <Row label={signal.predicateLabel}>
           <Text color="muted">
@@ -272,7 +271,7 @@ const ExtendedProvenance = ({ signals }: { signals: SafetySignal[] }) => {
           </Text>
         </Row>
       ))}
-    </Section>
+    </Box>
   );
 };
 
