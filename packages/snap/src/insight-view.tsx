@@ -22,9 +22,13 @@ import { Box, Button } from '@metamask/snaps-sdk/jsx';
 
 import {
   UnifiedFooter,
+  AddressBlock,
   OriginBlock,
+  EmptyStateNotice,
+  renderFirstPartyProvenance,
   renderPrimarySafety,
   renderExtendedSafety,
+  renderCriticalSafety,
   renderOneHopFamiliarity,
   renderExtendedFamiliarity,
 } from './components';
@@ -118,7 +122,12 @@ export function hasMoreInfo(model: InsightModel): boolean {
     renderExtendedSafety(safety) !== null ||
     renderExtendedFamiliarity(familiarity) !== null;
 
+  // When the origin is suppressed (no origin / metamask / localhost / any
+  // browser-extension origin) the dApp block never renders, so it can never
+  // contribute "More info" content — and the stray "More info" button on an
+  // otherwise-empty panel disappears.
   const originMore =
+    !model.suppressOrigin &&
     OriginBlock({
       variant: 'more',
       originProps: model.originProps,
@@ -130,7 +139,100 @@ export function hasMoreInfo(model: InsightModel): boolean {
 }
 
 /**
- * Builds the primary (inline) insight UI.
+ * Whether the primary (inline) tier has any renderable content: a 1st-degree
+ * destination-address safety flag/provenance, the 1-hop "People you follow"
+ * familiarity block, or an inline dApp critical danger banner. When this is
+ * false there is nothing to anchor the primary view, so any available
+ * "More info" content is promoted into the primary frame (rather than leaving a
+ * bare panel whose only affordance is a "More info" button).
+ *
+ * @param model - The insight model.
+ * @returns True when the primary tier has content to render inline.
+ */
+export function hasPrimaryContent(model: InsightModel): boolean {
+  const hasAddressSafety =
+    renderPrimarySafety(model.safety ?? undefined) !== null;
+  const hasAddressFamiliarity =
+    renderOneHopFamiliarity(model.familiarity ?? undefined) !== null;
+  const hasDappPrimary =
+    !model.suppressOrigin &&
+    renderCriticalSafety(model.originSafety ?? undefined) !== null;
+  return hasAddressSafety || hasAddressFamiliarity || hasDappPrimary;
+}
+
+/**
+ * Whether the panel has no substantive insight to show: no primary-tier content
+ * and nothing behind "More info" to promote. In this case the panel should read
+ * as an honest "nothing here yet" empty state rather than an implied clean bill
+ * of health.
+ *
+ * @param model - The insight model.
+ * @returns True when the empty-state notice should be shown.
+ */
+export function isEmptyInsight(model: InsightModel): boolean {
+  return !hasPrimaryContent(model) && !hasMoreInfo(model);
+}
+
+/**
+ * Whether the panel renders a "More info" button — and therefore needs an
+ * interactive interface. True only when the primary tier has content AND there
+ * is additional content behind "More info". When the primary tier is empty the
+ * more-info content is promoted inline instead (no button, no second page); when
+ * there is no more-info content there is nothing to expand.
+ *
+ * @param model - The insight model.
+ * @returns True when a "More info" button (and interactive interface) is needed.
+ */
+export function showsMoreInfoButton(model: InsightModel): boolean {
+  return hasPrimaryContent(model) && hasMoreInfo(model);
+}
+
+/**
+ * Whether a safety payload carries a critical (danger-banner) report.
+ *
+ * @param safety - The classified safety data, or undefined.
+ * @returns True when there is at least one critical report.
+ */
+function hasCriticalSafety(safety: SafetyData | undefined): boolean {
+  return Boolean(safety && safety.critical.length > 0);
+}
+
+/**
+ * Whether the dApp subject card should float above the address card. A subject
+ * with a critical safety report wins the top slot; when both subjects (or
+ * neither) carry a critical report the address card stays first — the
+ * address-first tiebreak. Subjects are never interleaved: each is a single
+ * contiguous card.
+ *
+ * @param addressCritical - Whether the address has a critical report.
+ * @param dappCritical - Whether the dApp has a critical report (and is shown).
+ * @returns True when the dApp card should render first.
+ */
+function dappCardFirst(
+  addressCritical: boolean,
+  dappCritical: boolean,
+): boolean {
+  return dappCritical && !addressCritical;
+}
+
+/**
+ * Builds the primary (inline) insight UI. Three branches, in priority order.
+ *
+ * Empty: no primary-tier content and nothing to promote — renders the neutral
+ * "nothing here yet" notice (never an implied clean bill of health).
+ *
+ * Promote: the primary tier is bare but there IS "More info" content — renders
+ * that content inline (its 'more' variant, address-first) within the primary
+ * frame so the panel is never a dead end whose only affordance is a "More info"
+ * button. No critical tiebreak (the 'more' tier never carries critical reports)
+ * and no "More info" button (everything is already shown).
+ *
+ * Primary populated: renders the primary-tier cards (a critical report floats to
+ * the top, address-first tiebreak) with a "More info" button when additional
+ * content sits behind it.
+ *
+ * The first-party provenance line and the unified footer render in all three
+ * branches (each handles its own null/empty conditions).
  *
  * @param model - The insight model.
  * @returns The primary insight JSX.
@@ -141,23 +243,87 @@ export function buildPrimaryInsight(model: InsightModel) {
   const originSafety = model.originSafety ?? undefined;
   const originFamiliarity = model.originFamiliarity ?? undefined;
 
-  return (
-    <Box>
-      {renderPrimarySafety(safety)}
+  const provenance = renderFirstPartyProvenance(model.originProps.originUrl);
+  const footer = (
+    <UnifiedFooter
+      accountProps={model.accountProps}
+      originProps={model.originProps}
+    />
+  );
+
+  // Branch 1 — Empty: honest "nothing here yet" notice.
+  if (isEmptyInsight(model)) {
+    return (
+      <Box>
+        <EmptyStateNotice />
+        {provenance}
+        {footer}
+      </Box>
+    );
+  }
+
+  // Branch 2 — Promote: no primary tier, but more-info content exists. Render
+  // the 'more' variant cards inline (address-first, no tiebreak, no button).
+  if (!hasPrimaryContent(model)) {
+    const addressCard = (
+      <AddressBlock
+        variant="more"
+        accountProps={model.accountProps}
+        safety={safety}
+        familiarity={familiarity}
+      />
+    );
+    const dappCard = model.suppressOrigin ? null : (
       <OriginBlock
-        variant="primary"
+        variant="more"
         originProps={model.originProps}
         safety={originSafety}
         familiarity={originFamiliarity}
       />
-      {renderOneHopFamiliarity(familiarity)}
-      {hasMoreInfo(model) ? (
+    );
+    return (
+      <Box>
+        {addressCard}
+        {dappCard}
+        {provenance}
+        {footer}
+      </Box>
+    );
+  }
+
+  // Branch 3 — Primary populated. Each subject is grouped into a single labeled
+  // card (no interleaving), then ordered so a critical report floats to the top
+  // (address-first tiebreak).
+  const addressCard = (
+    <AddressBlock
+      variant="primary"
+      accountProps={model.accountProps}
+      safety={safety}
+      familiarity={familiarity}
+    />
+  );
+  const dappCard = model.suppressOrigin ? null : (
+    <OriginBlock
+      variant="primary"
+      originProps={model.originProps}
+      safety={originSafety}
+      familiarity={originFamiliarity}
+    />
+  );
+  const dappFirst = dappCardFirst(
+    hasCriticalSafety(safety),
+    !model.suppressOrigin && hasCriticalSafety(originSafety),
+  );
+
+  return (
+    <Box>
+      {dappFirst ? dappCard : addressCard}
+      {dappFirst ? addressCard : dappCard}
+      {provenance}
+      {showsMoreInfoButton(model) ? (
         <Button name={MORE_INFO_BUTTON}>More info</Button>
       ) : null}
-      <UnifiedFooter
-        accountProps={model.accountProps}
-        originProps={model.originProps}
-      />
+      {footer}
     </Box>
   );
 }
@@ -174,16 +340,30 @@ export function buildMoreInfoInsight(model: InsightModel) {
   const originSafety = model.originSafety ?? undefined;
   const originFamiliarity = model.originFamiliarity ?? undefined;
 
+  // Same subject grouping as the primary view. The "More info" page never
+  // carries critical reports (those float up to the primary view), so ordering
+  // falls back to the address-first default.
+  const addressCard = (
+    <AddressBlock
+      variant="more"
+      accountProps={model.accountProps}
+      safety={safety}
+      familiarity={familiarity}
+    />
+  );
+  const dappCard = model.suppressOrigin ? null : (
+    <OriginBlock
+      variant="more"
+      originProps={model.originProps}
+      safety={originSafety}
+      familiarity={originFamiliarity}
+    />
+  );
+
   return (
     <Box>
-      {renderExtendedSafety(safety)}
-      {renderExtendedFamiliarity(familiarity)}
-      <OriginBlock
-        variant="more"
-        originProps={model.originProps}
-        safety={originSafety}
-        familiarity={originFamiliarity}
-      />
+      {addressCard}
+      {dappCard}
       <Button name={BACK_BUTTON}>Back</Button>
     </Box>
   );
