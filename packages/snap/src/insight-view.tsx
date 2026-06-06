@@ -105,9 +105,11 @@ export function jsonClone<T>(value: T): T {
 /**
  * Whether the model has any content that belongs on the secondary "More info"
  * page. Data-driven: true when the destination address has 2nd-degree safety or
- * familiarity, OR the dApp origin has any non-critical safety / any familiarity
- * / a contextual link to render. When false, the primary insight is returned as
- * static content with no "More info" button.
+ * familiarity, OR the dApp origin (site) has any non-critical safety / any
+ * familiarity signal to render. (Outbound links no longer live in the cards —
+ * they are consolidated in the {@link UnifiedFooter} — so they never gate
+ * "More info".) When false, the primary insight is returned as static content
+ * with no "More info" button.
  *
  * @param model - The insight model.
  * @returns True when there is more-info content to expand.
@@ -248,6 +250,7 @@ export function buildPrimaryInsight(model: InsightModel) {
     <UnifiedFooter
       accountProps={model.accountProps}
       originProps={model.originProps}
+      suppressOrigin={model.suppressOrigin}
     />
   );
 

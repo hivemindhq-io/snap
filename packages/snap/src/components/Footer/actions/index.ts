@@ -1,12 +1,17 @@
 /**
- * Footer action components - each is self-gating based on account state.
+ * Footer action components.
  *
- * Priority order (highest to lowest):
- * 1. CreateTrustTriple - no atom exists
- * 2. StakePrompt - trust triple exists but user hasn't staked
- * 3. CreateAlias - atom exists but no alias
- * 4. ViewMore - always shown
+ * Model A (one link per subject) is driven by the consolidated single-link
+ * actions:
+ * - {@link AddressAction} - one link for the destination address.
+ * - {@link SiteAction} - one link for the dApp origin (site).
+ *
+ * The legacy per-state self-gating components (CreateTrustTriple, StakePrompt,
+ * CreateAlias, ViewMore) are retained for the standalone {@link Footer} (used by
+ * non-insight surfaces) but are no longer used by the unified insight footer.
  */
+export { AddressAction } from './AddressAction';
+export { SiteAction } from './SiteActions';
 export { CreateTrustTriple } from './CreateTrustTriple';
 export { StakePrompt } from './StakePrompt';
 export { CreateAlias } from './CreateAlias';

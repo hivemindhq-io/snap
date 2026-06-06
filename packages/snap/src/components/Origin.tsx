@@ -1,87 +1,66 @@
 /**
- * dApp origin block.
+ * Site (dApp origin) block.
  *
- * The dApp origin is rendered with the SAME trust-circle paradigm as the
- * destination address: its safety read surface (scoped to the URL/site claim
- * vocabulary) and network familiarity flow through the shared renderers. There
- * is no longer a bespoke "Trustworthy %", FOR/AGAINST circle, or market-cap
- * block — those have been removed.
+ * The site is rendered with the SAME trust-circle paradigm as the destination
+ * address: its safety read surface (scoped to the URL/site claim vocabulary) and
+ * network familiarity flow through the shared renderers. There is no longer a
+ * bespoke "Trustworthy %", FOR/AGAINST circle, or market-cap block — those have
+ * been removed.
+ *
+ * The block is signals-only (evidence): it renders nothing but trust signals.
+ * All outbound "view / contribute" actions live in the {@link UnifiedFooter}
+ * (grouped by subject), so an origin with no signals produces no box at all.
  *
  * Two variants compose the shared renderers over the origin payloads. The
- * 'primary' variant shows the critical danger banner only (inline, when the dApp
+ * 'primary' variant shows the critical danger banner only (inline, when the site
  * has a critical safety report). The 'more' variant shows everything else:
- * non-critical safety, 1-hop/2-hop familiarity, and a single contextual link
- * (add trust data when no atom exists, or view the dApp on Hive Mind when it
- * does).
+ * non-critical safety and 1-hop/2-hop familiarity.
  *
  * @module components/Origin
  */
 
-import { Text, Section, Link, Heading } from '@metamask/snaps-sdk/jsx';
+import { Box, Text, Section, Heading } from '@metamask/snaps-sdk/jsx';
 
 import type { SafetyData } from '../safety/types';
 import type { NetworkFamiliarity } from '../trusted-circle/types';
 import { OriginType, type OriginProps } from '../types';
-import { vendor } from '../vendors';
 import { renderNetworkInsight } from './NetworkFamiliarity';
 import { renderCriticalSafety, renderNonCriticalSafety } from './Safety';
 
 /**
- * Heading for the dApp block, scoped to the hostname when known. A plain `md`
- * subject heading (no glyph) matching the {@link AddressBlock} "Destination"
- * title — the hostname itself carries the identity, so an extra globe icon was
- * just noise.
+ * Heading for the site block: a plain "Site" role label (`md` subject heading —
+ * no glyph) above the hostname, mirroring the {@link AddressBlock} two-tier
+ * "Destination" + address header. Splitting the label and hostname onto separate
+ * lines keeps the role marker parallel to the address card and avoids the
+ * single-line "Site · {long.host.name}" wrapping that orphaned the "Site ·"
+ * prefix. Falls back to the bare "Site" label when no hostname is known.
  *
  * @param props - The hostname to display.
- * @param props.hostname - The dApp hostname (e.g. "app.uniswap.org").
- * @returns The dApp heading.
+ * @param props.hostname - The site hostname (e.g. "app.uniswap.org").
+ * @returns The site heading.
  */
-const OriginHeading = ({ hostname }: { hostname: string | undefined }) => (
-  <Heading size="md">{hostname ? `dApp · ${hostname}` : 'dApp'}</Heading>
-);
-
-/**
- * The single contextual link for the dApp: "add trust data" when the dApp has
- * no atom yet, or "view on Hive Mind" when an atom exists. Returns null when no
- * link can be built.
- *
- * @param props - Origin props (carries the origin type + hostname/atom).
- * @returns A Link, or null.
- */
-const OriginLink = (props: OriginProps) => {
-  if (props.originType === OriginType.NoAtom) {
-    if (!props.hostname && !props.originUrl) {
-      return null;
-    }
-    const { url } = vendor.originNoAtom(props);
-    return (
-      <Text>
-        <Link href={url}>Be first to add trust data for this dApp ↗</Link>
-      </Text>
-    );
+const OriginHeading = ({ hostname }: { hostname: string | undefined }) => {
+  if (!hostname) {
+    return <Heading size="md">Site</Heading>;
   }
-
-  if (props.originType === OriginType.HasAtom) {
-    const { url } = vendor.viewOriginAtom(props);
-    return (
-      <Text>
-        <Link href={url}>View this dApp on Hive Mind ↗</Link>
-      </Text>
-    );
-  }
-
-  return null;
+  return (
+    <Box>
+      <Heading size="md">Site</Heading>
+      <Text>{hostname}</Text>
+    </Box>
+  );
 };
 
 /**
- * Renders the dApp origin block.
+ * Renders the site (dApp origin) block. Signals-only: no contextual link (those
+ * live in the {@link UnifiedFooter}).
  *
  * @param props - Block props.
  * @param props.variant - Which slice to render: the primary critical banner or the more-info remainder.
- * @param props.originProps - Origin props (type + hostname/atom) for the link.
+ * @param props.originProps - Origin props (type + hostname/atom) for the heading.
  * @param props.safety - The origin's classified safety data, or null.
  * @param props.familiarity - The origin's network familiarity, or null.
- * @returns The dApp block JSX, or null when there is nothing to show.
+ * @returns The site block JSX, or null when there are no signals to show.
  */
 export const OriginBlock = ({
   variant,
@@ -111,12 +90,11 @@ export const OriginBlock = ({
     );
   }
 
-  // 'more' variant: non-critical safety + familiarity + the contextual link.
+  // 'more' variant: non-critical safety + familiarity (signals only).
   const nonCritical = renderNonCriticalSafety(safety);
   const network = renderNetworkInsight(familiarity);
-  const link = OriginLink(originProps);
 
-  if (!nonCritical && !network && !link) {
+  if (!nonCritical && !network) {
     return null;
   }
 
@@ -125,7 +103,6 @@ export const OriginBlock = ({
       <OriginHeading hostname={originProps.hostname} />
       {nonCritical}
       {network}
-      {link}
     </Section>
   );
 };
