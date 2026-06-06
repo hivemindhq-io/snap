@@ -12,8 +12,14 @@
  * @module claim-templates/service
  */
 
-import { chainConfig, SAFETY_PREDICATE_IDS, SAFETY_OBJECT_IDS } from '../config';
-import type { ClaimTemplateRegistry } from './types';
+import {
+  chainConfig,
+  SAFETY_PREDICATE_IDS,
+  SAFETY_OBJECT_IDS,
+  BLACKLISTED_TERM_IDS,
+  FAMILIARITY_VOCAB,
+} from '../config';
+import type { ClaimTemplateRegistry, FamiliarityVocabEntry } from './types';
 import { getClaimTemplatesCache, setClaimTemplatesCache } from './cache';
 
 /**
@@ -34,6 +40,10 @@ function buildDefaults(): ClaimTemplateRegistry {
       ...SAFETY_OBJECT_IDS,
       trustworthy: chainConfig.trustworthyAtomId,
     },
+    blacklistedTermIds: [...BLACKLISTED_TERM_IDS],
+    familiarityVocab: FAMILIARITY_VOCAB.map(
+      (entry): FamiliarityVocabEntry => ({ ...entry }),
+    ),
     templates: [],
   };
 }

@@ -9,8 +9,21 @@
  */
 
 import { keccak_256 } from '@noble/hashes/sha3';
-import { graphQLQuery, getUserTrustedCircleQuery, getExtendedNetworkQuery, getAtomsForAddressesQuery, getAllClaimsAboutAtomQuery } from '../queries';
-import { chainConfig, ChainConfig, MAX_SEED_FOLLOWS, MIN_BRIDGES } from '../config';
+import {
+  graphQLQuery,
+  getUserTrustedCircleQuery,
+  getExtendedNetworkQuery,
+  getAtomsForAddressesQuery,
+  getAllClaimsAboutAtomQuery,
+} from '../queries';
+import {
+  chainConfig,
+  ChainConfig,
+  MAX_SEED_FOLLOWS,
+  MIN_BRIDGES,
+  BLACKLISTED_TERM_IDS,
+  FAMILIARITY_VOCAB,
+} from '../config';
 import {
   getTrustedCircleCache,
   setTrustedCircleCache,
@@ -18,6 +31,7 @@ import {
   getExtendedNetworkCache,
   setExtendedNetworkCache,
 } from './cache';
+import type { ClaimTemplateRegistry } from '../claim-templates';
 import type {
   TrustedContact,
   TrustedCirclePositions,
@@ -101,7 +115,6 @@ async function fetchTrustedCircleFromAPI(
 ): Promise<TrustedContact[]> {
   const { iAtomId, followAtomId } = chainConfig as ChainConfig;
 
-
   const response = (await graphQLQuery(getUserTrustedCircleQuery, {
     userAddress,
     subjectId: iAtomId,
@@ -116,7 +129,6 @@ async function fetchTrustedCircleFromAPI(
     followAtomId,
     positionCount: positions.length,
   });
-
 
   // Extract unique contacts (user might have multiple positions on same triple)
   // IMPORTANT: Use the wallet address for matching against positions.
@@ -136,8 +148,8 @@ async function fetchTrustedCircleFromAPI(
     const walletAddress = isEvmAddress(object.data)
       ? object.data
       : isEvmAddress(object.label)
-        ? object.label
-        : null;
+      ? object.label
+      : null;
 
     if (!walletAddress) continue;
 
@@ -273,7 +285,10 @@ async function fetchExtendedNetworkFromAPI(
   // Group rows by FoaF; accumulate distinct bridges in `via`. Every address is
   // canonicalized to its checksummed form, so comparisons and stored values stay
   // canonical (no lowercasing).
-  const foafMap = new Map<string, { accountId: string; label: string; via: Set<string> }>();
+  const foafMap = new Map<
+    string,
+    { accountId: string; label: string; via: Set<string> }
+  >();
 
   for (const position of positions) {
     const triple = position.term?.triple;
@@ -290,8 +305,8 @@ async function fetchExtendedNetworkFromAPI(
       isEvmAddress(object.data)
         ? object.data
         : isEvmAddress(object.label)
-          ? object.label
-          : null,
+        ? object.label
+        : null,
     );
     if (!foaf) continue;
 
@@ -327,7 +342,9 @@ async function fetchExtendedNetworkFromAPI(
 
   console.log('[ExtendedNetwork] resolved FoaF contacts', {
     count: contacts.length,
-    topBridges: contacts.slice(0, 5).map((c) => `${c.label} (${c.via.length} bridges)`),
+    topBridges: contacts
+      .slice(0, 5)
+      .map((c) => `${c.label} (${c.via.length} bridges)`),
   });
 
   return contacts;
@@ -488,7 +505,6 @@ export function getTrustedContactsWithPositions(
     return 0;
   });
 
-
   return { forContacts, againstContacts };
 }
 
@@ -523,6 +539,104 @@ interface AllClaimsResponse {
 }
 
 /**
+ * Sentinel object key meaning "match any object" for a self-describing predicate
+ * (e.g. `vouchFor`). Mirrors the `object: "*"` convention in the API config.
+ */
+const FAMILIARITY_OBJECT_WILDCARD = '*';
+
+/**
+ * Resolved familiarity whitelist: maps a triple's on-chain `(predicate_id,
+ * object_id)` to its placement tier. Built from the registry's named keys, so a
+ * vocab entry only contributes when BOTH its predicate and object keys resolve to
+ * term IDs via the registry maps (offline-seed objects that aren't in the maps
+ * simply don't apply — graceful degradation).
+ */
+type FamiliarityWhitelist = {
+  /** `${predicateId}|${objectId}` → tier, for object-specific entries. */
+  pairs: Map<string, 'primary' | 'secondary'>;
+  /** `predicateId` → tier, for wildcard (`object: "*"`) entries. */
+  wildcards: Map<string, 'primary' | 'secondary'>;
+};
+
+/**
+ * Builds the default-deny familiarity whitelist by resolving the vocab entries'
+ * named predicate/object keys to on-chain term IDs through the registry maps.
+ *
+ * The live registry's `familiarityVocab` is unioned with the local offline seed
+ * (`FAMILIARITY_VOCAB`) so a known-good claim still surfaces from a stale cache
+ * or when the API omits the field. When two entries resolve to the same pair, the
+ * stronger (`primary`) tier wins.
+ *
+ * @param registry - The claim-template registry (predicate/object maps + vocab).
+ * @returns The resolved whitelist (pair + wildcard lookups), possibly empty.
+ */
+function buildFamiliarityWhitelist(
+  registry: ClaimTemplateRegistry | undefined,
+): FamiliarityWhitelist {
+  const pairs = new Map<string, 'primary' | 'secondary'>();
+  const wildcards = new Map<string, 'primary' | 'secondary'>();
+
+  const predicates = registry?.predicates ?? {};
+  const objects = registry?.objects ?? {};
+
+  // Union the live vocab with the offline seed. Entries are deduped implicitly by
+  // the maps; `primary` beats `secondary` on collision.
+  const entries = [...(registry?.familiarityVocab ?? []), ...FAMILIARITY_VOCAB];
+
+  const strongest = (
+    existing: 'primary' | 'secondary' | undefined,
+    next: 'primary' | 'secondary',
+  ): 'primary' | 'secondary' =>
+    existing === 'primary' || next === 'primary' ? 'primary' : 'secondary';
+
+  for (const entry of entries) {
+    const predicateId = predicates[entry.predicate];
+    if (!predicateId) {
+      continue;
+    }
+
+    if (entry.object === FAMILIARITY_OBJECT_WILDCARD) {
+      wildcards.set(
+        predicateId,
+        strongest(wildcards.get(predicateId), entry.tier),
+      );
+      continue;
+    }
+
+    const objectId = objects[entry.object];
+    if (!objectId) {
+      continue;
+    }
+    const key = `${predicateId}|${objectId}`;
+    pairs.set(key, strongest(pairs.get(key), entry.tier));
+  }
+
+  return { pairs, wildcards };
+}
+
+/**
+ * Resolves a triple's placement tier against the whitelist, or `null` when the
+ * claim is not whitelisted at all. Object-specific entries take precedence over a
+ * predicate wildcard.
+ *
+ * @param whitelist - The resolved familiarity whitelist.
+ * @param predicateId - The triple's predicate term ID.
+ * @param objectId - The triple's object term ID.
+ * @returns The claim's tier, or null when not whitelisted.
+ */
+function resolveFamiliarityTier(
+  whitelist: FamiliarityWhitelist,
+  predicateId: string,
+  objectId: string,
+): 'primary' | 'secondary' | null {
+  const pairTier = whitelist.pairs.get(`${predicateId}|${objectId}`);
+  if (pairTier) {
+    return pairTier;
+  }
+  return whitelist.wildcards.get(predicateId) ?? null;
+}
+
+/**
  * Fetches all claims about an atom and cross-references with the user's trust circle.
  * Returns contacts who have ANY claim about the target address,
  * de-duplicated against those already shown in the TrustedCircle section.
@@ -537,8 +651,11 @@ interface AllClaimsResponse {
  * @param userAddress - The current user's address to exclude
  * @param extendedIndex - Optional 2-hop lookup (FoaF ids + per-contact bridges)
  * @param excludeTermIds - Optional set of triple term_ids already surfaced in the
- *   safety section. Matching claims are skipped so each claim has exactly one home
- *   (Opt 3 dedup); contacts left with zero claims are naturally dropped.
+ * safety section. Matching claims are skipped so each claim has exactly one home
+ * (Opt 3 dedup); contacts left with zero claims are naturally dropped.
+ * @param registry - Optional claim-template registry. When supplied, each claim's
+ * `predicate_id` is resolved to its first-class key (e.g. 'hasTag') so the UI can
+ * render natural-language phrasing. Absent ⇒ claims fall back to verbatim labels.
  * @returns Network familiarity data, or undefined if no relevant contacts
  */
 export async function getNetworkFamiliarity(
@@ -548,6 +665,7 @@ export async function getNetworkFamiliarity(
   userAddress?: string,
   extendedIndex?: { ids: Set<string>; byAddress: Map<string, ExtendedContact> },
   excludeTermIds?: Set<string>,
+  registry?: ClaimTemplateRegistry,
 ): Promise<NetworkFamiliarity | undefined> {
   if (trustedCircle.length === 0) {
     return undefined;
@@ -571,15 +689,73 @@ export async function getNetworkFamiliarity(
       trustedCircle.map((c) => [c.accountId.toLowerCase(), c.label]),
     );
 
+    // Reverse the registry's `key -> term_id` predicate map so we can resolve each
+    // claim's `predicate_id` to its first-class key (e.g. 'hasTag'). Direct string
+    // match, mirroring the safety service (no normalization). Empty when absent.
+    const predIdToKey = new Map<string, string>(
+      registry
+        ? Object.entries(registry.predicates).map(([key, id]) => [id, key])
+        : [],
+    );
+
+    // Suppression set: union the live registry blacklist with the local offline
+    // seed so a known rogue/duplicate atom (e.g. a non-canonical "has tag") is
+    // always filtered, even from a stale cache or when the API omits the field.
+    const blacklist = new Set<string>([
+      ...(registry?.blacklistedTermIds ?? []),
+      ...BLACKLISTED_TERM_IDS,
+    ]);
+
+    // Default-deny familiarity whitelist (predicate+object → tier). The surface
+    // shows ONLY whitelisted claims; everything else is suppressed unless the
+    // escape hatch below fires.
+    const whitelist = buildFamiliarityWhitelist(registry);
+
+    // Escape hatch: if NOTHING on this subject is whitelisted, fall back to
+    // showing the (post-blacklist) claims verbatim — but only in More info, by
+    // stamping them `secondary`. This keeps long-tail/unknown predicates visible
+    // when there is no curated signal at all, while never letting them reach the
+    // inline primary tier. A single whitelisted claim disables the hatch.
+    const anyWhitelisted = triples.some(
+      (t) =>
+        !excludeTermIds?.has(t.term_id) &&
+        !blacklist.has(t.predicate_id) &&
+        !blacklist.has(t.object_id) &&
+        !blacklist.has(t.term_id) &&
+        resolveFamiliarityTier(whitelist, t.predicate_id, t.object_id) !== null,
+    );
+
+    console.log('[NetworkFamiliarity] predicate registry', {
+      subjectAtomId,
+      hasRegistry: Boolean(registry),
+      predicateKeyCount: predIdToKey.size,
+      whitelistPairs: whitelist.pairs.size,
+      whitelistWildcards: whitelist.wildcards.size,
+      anyWhitelisted,
+    });
+
     // Collect claims per trusted contact, skipping already-displayed and the user.
-    const contactClaimsMap = new Map<string, { accountId: string; label: string; claims: ClaimContext[] }>();
+    const contactClaimsMap = new Map<
+      string,
+      { accountId: string; label: string; claims: ClaimContext[] }
+    >();
     // Separate accumulator for degree-2 (friend-of-a-friend) contacts.
-    const extendedClaimsMap = new Map<string, { accountId: string; label: string; claims: ClaimContext[]; bridgeCount: number }>();
+    const extendedClaimsMap = new Map<
+      string,
+      {
+        accountId: string;
+        label: string;
+        claims: ClaimContext[];
+        bridgeCount: number;
+      }
+    >();
 
     /** De-dupes a claim into a contact's running claim list. */
     const pushClaim = (claims: ClaimContext[], claim: ClaimContext): void => {
       const hasClaim = claims.some(
-        (c) => c.predicateLabel === claim.predicateLabel && c.objectLabel === claim.objectLabel,
+        (c) =>
+          c.predicateLabel === claim.predicateLabel &&
+          c.objectLabel === claim.objectLabel,
       );
       if (!hasClaim) {
         claims.push(claim);
@@ -591,9 +767,50 @@ export async function getNetworkFamiliarity(
       // here to avoid showing the same triple in two places.
       if (excludeTermIds?.has(triple.term_id)) continue;
 
+      // Suppress blacklisted atoms (non-canonical / duplicate). Match on the
+      // predicate, object, or triple term ID so one list can kill a rogue
+      // predicate, a rogue object, or a single bad triple.
+      if (
+        blacklist.has(triple.predicate_id) ||
+        blacklist.has(triple.object_id) ||
+        blacklist.has(triple.term_id)
+      ) {
+        continue;
+      }
+
+      // Default-deny: resolve this claim's placement tier from the whitelist.
+      // A whitelisted claim keeps its tier; a non-whitelisted claim is dropped
+      // unless the escape hatch is active (nothing whitelisted on the subject),
+      // in which case it surfaces verbatim but pinned to `secondary` (More info).
+      const matchedTier = resolveFamiliarityTier(
+        whitelist,
+        triple.predicate_id,
+        triple.object_id,
+      );
+      if (matchedTier === null && anyWhitelisted) {
+        continue;
+      }
+      const tier: 'primary' | 'secondary' = matchedTier ?? 'secondary';
+
       const predicateLabel = triple.predicate?.label || 'unknown';
       const objectLabel = triple.object?.label || 'unknown';
-      const claim: ClaimContext = { predicateLabel, objectLabel };
+      const predicateKey = predIdToKey.get(triple.predicate_id);
+
+      console.log('[NetworkFamiliarity] claim predicate resolution', {
+        predicateId: triple.predicate_id,
+        predicateLabel,
+        objectLabel,
+        resolvedKey: predicateKey ?? null,
+        tier,
+        viaEscapeHatch: matchedTier === null,
+      });
+
+      const claim: ClaimContext = {
+        predicateLabel,
+        objectLabel,
+        tier,
+        ...(predicateKey ? { predicateKey } : {}),
+      };
 
       const allPositionAccounts = [
         ...triple.positions.map((p) => p.account_id),
@@ -645,9 +862,13 @@ export async function getNetworkFamiliarity(
       }
     }
 
-    const familiarContacts: FamiliarContact[] = Array.from(contactClaimsMap.values());
+    const familiarContacts: FamiliarContact[] = Array.from(
+      contactClaimsMap.values(),
+    );
 
-    const extendedContacts: FamiliarContact[] = Array.from(extendedClaimsMap.values())
+    const extendedContacts: FamiliarContact[] = Array.from(
+      extendedClaimsMap.values(),
+    )
       .map((c) => ({
         accountId: c.accountId,
         label: c.label,
@@ -711,8 +932,8 @@ export async function enrichContactLabels(
   }
 
   // Collect unique addresses (both lowercase for query flexibility)
-  const addresses = [...new Set(allContacts.map(c => c.accountId))];
-  const lowercaseAddresses = addresses.map(a => a.toLowerCase());
+  const addresses = [...new Set(allContacts.map((c) => c.accountId))];
+  const lowercaseAddresses = addresses.map((a) => a.toLowerCase());
 
   // Query for all addresses in one batch
   const allAddresses = [...addresses, ...lowercaseAddresses];
@@ -734,18 +955,22 @@ export async function enrichContactLabels(
       const addressFromLabel = atom.label?.toLowerCase();
 
       // Check if this atom's label is a resolved name (not an address)
-      const isResolvedName = atom.label && !/^0x[a-fA-F0-9]{40}$/iu.test(atom.label);
+      const isResolvedName =
+        atom.label && !/^0x[a-fA-F0-9]{40}$/iu.test(atom.label);
 
       // Map both possible address sources to the label
       if (addressFromData && isResolvedName) {
         // Prefer resolved name over existing entry
         labelMap.set(addressFromData, atom.label);
       }
-      if (addressFromLabel && isResolvedName && addressFromLabel !== addressFromData) {
+      if (
+        addressFromLabel &&
+        isResolvedName &&
+        addressFromLabel !== addressFromData
+      ) {
         labelMap.set(addressFromLabel, atom.label);
       }
     }
-
 
     // Update contacts with resolved labels
     const enrichContact = (contact: TrustedContact): TrustedContact => {

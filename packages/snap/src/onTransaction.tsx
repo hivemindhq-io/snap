@@ -8,7 +8,7 @@ import { getAccountData, getAccountType } from './account';
 import { getClaimTemplates } from './claim-templates';
 import { EXTENDED_NETWORK_ENABLED } from './config';
 import {
-  hasMoreInfo,
+  showsMoreInfoButton,
   buildPrimaryInsight,
   jsonClone,
   toInterfaceContext,
@@ -57,6 +57,14 @@ export const onTransaction: OnTransactionHandler = async ({
     // globally. Falls back to an empty whitelist internally.
     getPublisherWhitelist(),
   ]);
+
+  console.log('[onTransaction] claim templates loaded', {
+    hasClaimTemplates: Boolean(claimTemplates),
+    version: claimTemplates?.version,
+    predicateKeys: claimTemplates
+      ? Object.keys(claimTemplates.predicates)
+      : [],
+  });
 
   const accountType = getAccountType(accountData);
   const originType = getOriginType(originData, transactionOrigin);
@@ -113,6 +121,7 @@ export const onTransaction: OnTransactionHandler = async ({
       userAddress,
       EXTENDED_NETWORK_ENABLED ? extendedIndex : undefined,
       safetyTermIds,
+      claimTemplates,
     );
   }
 
@@ -165,6 +174,7 @@ export const onTransaction: OnTransactionHandler = async ({
       userAddress,
       EXTENDED_NETWORK_ENABLED ? extendedIndex : undefined,
       originSafetyTermIds,
+      claimTemplates,
     );
   }
 
@@ -211,10 +221,11 @@ export const onTransaction: OnTransactionHandler = async ({
     suppressOrigin,
   });
 
-  // When there is content to expand (2nd-degree signals or a dApp origin
-  // insight), return an interactive interface so the user can navigate to the
-  // "More info" page. Otherwise return static content (no button rendered).
-  if (hasMoreInfo(model)) {
+  // An interactive interface is only needed when a "More info" button renders —
+  // i.e. the primary tier has content AND there is additional content behind it.
+  // When the primary tier is empty the more-info content is promoted inline, and
+  // a truly empty panel shows the static notice; both return static content.
+  if (showsMoreInfoButton(model)) {
     const id = await snap.request({
       method: 'snap_createInterface',
       params: {

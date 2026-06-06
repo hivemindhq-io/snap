@@ -65,6 +65,16 @@ export interface ClaimContext {
   predicateLabel: string;
   /** Human-readable object label (e.g., "DeFi Protocol") */
   objectLabel: string;
+  /** Resolved first-class registry key (e.g. 'hasTag'); absent if not first-class. */
+  predicateKey?: string;
+  /**
+   * Placement tier resolved from the familiarity vocabulary whitelist.
+   *   - `'primary'`   → eligible to render inline (1-hop) and in More info (2-hop).
+   *   - `'secondary'` → always demoted to More info, even from a direct follow.
+   * Absent ⇒ the claim came through the verbatim escape hatch (no whitelist match
+   * anywhere on the subject) and is treated as `'secondary'` by renderers.
+   */
+  tier?: 'primary' | 'secondary';
 }
 
 /**

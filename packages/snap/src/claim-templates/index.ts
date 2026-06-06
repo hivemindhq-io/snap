@@ -4,4 +4,6 @@ export type {
   ClaimTemplateMapping,
   ClaimTemplate,
   ClaimSlot,
+  FamiliarityTier,
+  FamiliarityVocabEntry,
 } from './types';

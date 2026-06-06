@@ -45,6 +45,23 @@ export interface ClaimTemplateMapping {
   potentialTriples: ClaimTemplate[];
 }
 
+/** Placement tier for a whitelisted familiarity claim. */
+export type FamiliarityTier = 'primary' | 'secondary';
+
+/**
+ * A single allowed entry on the familiarity read surface. The familiarity surface
+ * is default-deny: only claims whose (predicate, object) pair matches an entry
+ * here render. `predicate`/`object` reference the named keys in the registry's
+ * `predicates`/`objects` maps; `object: "*"` matches any object for a
+ * self-describing predicate (e.g. `vouchFor`). `tier` is the placement ceiling
+ * (`primary` = inline-eligible at 1-hop; `secondary` = always demoted to More info).
+ */
+export interface FamiliarityVocabEntry {
+  predicate: string;
+  object: string;
+  tier: FamiliarityTier;
+}
+
 /** Shape returned by GET /atoms/claim-templates on the Hive Mind API. */
 export interface ClaimTemplateRegistry {
   version: number;
@@ -52,6 +69,18 @@ export interface ClaimTemplateRegistry {
   predicates: Record<string, string>;
   /** Named object term IDs (e.g. { malicious: "0x…", suspicious: "0x…" }). */
   objects: Record<string, string>;
+  /**
+   * Term IDs suppressed from the read surface (non-canonical / duplicate atoms).
+   * Optional so older cached payloads that predate the field still type-check;
+   * consumers union it with the local offline seed in `config.ts`.
+   */
+  blacklistedTermIds?: string[];
+  /**
+   * Default-deny allowlist for the familiarity read surface (NOT safety).
+   * Optional so older cached payloads still type-check; consumers union it with
+   * the local offline seed (`FAMILIARITY_VOCAB`) in `config.ts`.
+   */
+  familiarityVocab?: FamiliarityVocabEntry[];
   templates: ClaimTemplateMapping[];
 }
 
