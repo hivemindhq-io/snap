@@ -9,13 +9,14 @@
  * @module components/NetworkFamiliarity
  */
 
-import { Box, Row, Text, Heading } from '@metamask/snaps-sdk/jsx';
+import { Box, Row, Text } from '@metamask/snaps-sdk/jsx';
 
 import type {
   ClaimContext,
   FamiliarContact,
   NetworkFamiliarity,
 } from '../trusted-circle/types';
+import { AccountLabel, SectionHeading } from './ui';
 
 const MAX_NAMES_PER_GROUP = 3;
 
@@ -40,7 +41,7 @@ function contactsByTier(
   const result: FamiliarContact[] = [];
   for (const contact of contacts) {
     const claims = contact.claims.filter(
-      (c) => (c.tier ?? 'secondary') === tier,
+      (claim) => (claim.tier ?? 'secondary') === tier,
     );
     if (claims.length > 0) {
       result.push({ ...contact, claims });
@@ -93,8 +94,13 @@ function phraseClaim(claim: ClaimContext): string {
 type ClaimGroup = {
   /** The rendered claim phrase shown as the row label. */
   label: string;
-  /** Display labels of the contacts asserting this claim, in input order. */
-  contactLabels: string[];
+  /**
+   * The contacts asserting this claim, in input order. The raw `accountId` (a
+   * checksummed 0x address) and the human `label` are both kept so the renderer
+   * can prefer the `Address` primitive (Jazzicon + canonical truncation) and
+   * fall back to the ENS/name label only when no hex address is available.
+   */
+  contacts: { accountId: string; label: string }[];
 };
 
 /**
@@ -110,16 +116,14 @@ function groupByClaim(contacts: FamiliarContact[]): ClaimGroup[] {
   const groups = new Map<string, ClaimGroup>();
 
   for (const contact of contacts) {
+    const entry = { accountId: contact.accountId, label: contact.label };
     for (const claim of contact.claims) {
       const label = phraseClaim(claim);
       const existing = groups.get(label);
       if (existing) {
-        existing.contactLabels.push(formatLabel(contact.label));
+        existing.contacts.push(entry);
       } else {
-        groups.set(label, {
-          label,
-          contactLabels: [formatLabel(contact.label)],
-        });
+        groups.set(label, { label, contacts: [entry] });
       }
     }
   }
@@ -128,41 +132,98 @@ function groupByClaim(contacts: FamiliarContact[]): ClaimGroup[] {
 }
 
 /**
- * Joins contact labels for a group's sub-line, truncating with "+N more" past
- * the display cap.
+ * Picks the best identifier to render for a contact: the raw checksummed
+ * `accountId` so the {@link AccountLabel}/`Address` primitive can draw a
+ * Jazzicon + canonical truncation, falling back to a CAIP-10 inner address or
+ * the human label (ENS/name) when no bare hex address is available.
  *
- * @param labels - Already-formatted contact labels.
- * @returns A comma-joined string, truncated when long.
+ * @param contact - The grouped contact entry.
+ * @param contact.accountId - The contact's checksummed wallet address.
+ * @param contact.label - The contact's human label (ENS/name) or caip10 string.
+ * @returns The string to hand to `AccountLabel`.
  */
-function formatContactNames(labels: string[]): string {
-  const shown = labels.slice(0, MAX_NAMES_PER_GROUP);
-  const remaining = labels.length - shown.length;
-  const joined = shown.join(', ');
-  return remaining > 0 ? `${joined} +${remaining} more` : joined;
+function contactIdentifier(contact: {
+  accountId: string;
+  label: string;
+}): string {
+  if (/^0x[a-fA-F0-9]{40}$/u.test(contact.accountId)) {
+    return contact.accountId;
+  }
+  if (contact.label.startsWith('caip10:')) {
+    const parts = contact.label.split(':');
+    const address = parts[parts.length - 1];
+    if (address && /^0x[a-fA-F0-9]{40}$/u.test(address)) {
+      return address;
+    }
+  }
+  return contact.label;
 }
 
 /**
- * Formats a contact's label for display.
- * Truncates full addresses but preserves ENS names.
+ * Renders one claim group: the claim phrase plus the contacts asserting it.
  *
- * @param label - The contact's label.
- * @returns Formatted label string.
+ * When more than one contact asserts the claim, the count ("N people") is shown
+ * in the {@link Row} value as a useful aggregate. For a SINGLE contact the count
+ * ("1 person") is redundant with the lone name rendered directly below it, so it
+ * is suppressed and the claim phrase is shown as a plain heading-weight label —
+ * the {@link ContactList} underneath names the one person.
+ *
+ * @param props - Props.
+ * @param props.claim - The rendered claim phrase (the row label).
+ * @param props.contacts - The contacts asserting this claim.
+ * @param props.unitPlural - Plural noun for the contacts (e.g. "people").
+ * @param props.tooltip - Optional tooltip explaining the claim's provenance.
+ * @returns A box with the claim row + contact list.
  */
-function formatLabel(label: string): string {
-  if (/^0x[a-fA-F0-9]{40}$/u.test(label)) {
-    return `${label.slice(0, 6)}...${label.slice(-4)}`;
-  }
+const ClaimGroupRow = ({
+  claim,
+  contacts,
+  unitPlural,
+  tooltip,
+}: {
+  claim: string;
+  contacts: { accountId: string; label: string }[];
+  unitPlural: string;
+  tooltip?: string;
+}) => {
+  const count = contacts.length;
+  return (
+    <Box>
+      <Row label={claim} tooltip={tooltip}>
+        <Text color="muted">{count > 1 ? `${count} ${unitPlural}` : ' '}</Text>
+      </Row>
+      <ContactList contacts={contacts} />
+    </Box>
+  );
+};
 
-  if (label.startsWith('caip10:')) {
-    const parts = label.split(':');
-    const address = parts[parts.length - 1];
-    if (address && /^0x[a-fA-F0-9]{40}$/u.test(address)) {
-      return `${address.slice(0, 6)}...${address.slice(-4)}`;
-    }
-  }
-
-  return label;
-}
+/**
+ * Renders the contacts asserting a claim as a row each, using the `Address`
+ * primitive (canonical truncation + saved display name, avatar OFF) for hex
+ * accounts and a plain label otherwise. Avatars are suppressed here on purpose:
+ * a column of maskicons is noise and can imply reassurance the data doesn't
+ * support. Capped at {@link MAX_NAMES_PER_GROUP}, with a "+N more" tail row.
+ *
+ * @param props - Props.
+ * @param props.contacts - The contacts in this claim group.
+ * @returns A box of per-contact rows.
+ */
+const ContactList = ({
+  contacts,
+}: {
+  contacts: { accountId: string; label: string }[];
+}) => {
+  const shown = contacts.slice(0, MAX_NAMES_PER_GROUP);
+  const remaining = contacts.length - shown.length;
+  return (
+    <Box>
+      {shown.map((contact) => (
+        <AccountLabel label={contactIdentifier(contact)} />
+      ))}
+      {remaining > 0 ? <Text color="muted">{`+${remaining} more`}</Text> : null}
+    </Box>
+  );
+};
 
 /**
  * Props for NetworkFamiliaritySection.
@@ -200,20 +261,15 @@ export const NetworkFamiliaritySection = ({
 
   return (
     <Box>
-      <Heading size="sm">People you follow</Heading>
+      <SectionHeading>People you follow</SectionHeading>
 
-      {groups.map((group) => {
-        const count = group.contactLabels.length;
-        const who = count === 1 ? '1 person' : `${count} people`;
-        return (
-          <Box>
-            <Row label={group.label}>
-              <Text color="muted">{who}</Text>
-            </Row>
-            <Text color="muted">{formatContactNames(group.contactLabels)}</Text>
-          </Box>
-        );
-      })}
+      {groups.map((group) => (
+        <ClaimGroupRow
+          claim={group.label}
+          contacts={group.contacts}
+          unitPlural="people"
+        />
+      ))}
     </Box>
   );
 };
@@ -243,20 +299,16 @@ const ExtendedFamiliaritySection = ({
 
   return (
     <Box>
-      <Heading size="sm">Friends of people you follow</Heading>
+      <SectionHeading>Friends of people you follow</SectionHeading>
 
-      {groups.map((group) => {
-        const count = group.contactLabels.length;
-        const who = count === 1 ? '1 contact' : `${count} contacts`;
-        return (
-          <Box>
-            <Row label={group.label}>
-              <Text color="muted">{who}</Text>
-            </Row>
-            <Text color="muted">{formatContactNames(group.contactLabels)}</Text>
-          </Box>
-        );
-      })}
+      {groups.map((group) => (
+        <ClaimGroupRow
+          claim={group.label}
+          contacts={group.contacts}
+          unitPlural="contacts"
+          tooltip="Asserted by accounts your follows trust (friend-of-a-friend)."
+        />
+      ))}
     </Box>
   );
 };
@@ -284,20 +336,15 @@ const DemotedOneHopSection = ({
 
   return (
     <Box>
-      <Heading size="sm">People you follow</Heading>
+      <SectionHeading>People you follow</SectionHeading>
 
-      {groups.map((group) => {
-        const count = group.contactLabels.length;
-        const who = count === 1 ? '1 person' : `${count} people`;
-        return (
-          <Box>
-            <Row label={group.label}>
-              <Text color="muted">{who}</Text>
-            </Row>
-            <Text color="muted">{formatContactNames(group.contactLabels)}</Text>
-          </Box>
-        );
-      })}
+      {groups.map((group) => (
+        <ClaimGroupRow
+          claim={group.label}
+          contacts={group.contacts}
+          unitPlural="people"
+        />
+      ))}
     </Box>
   );
 };
