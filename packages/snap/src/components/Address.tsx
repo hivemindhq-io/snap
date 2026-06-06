@@ -1,0 +1,126 @@
+/**
+ * Destination-address subject card.
+ *
+ * Groups ALL destination-address signals under a single labeled section so the
+ * user can tell at a glance that everything inside refers to the address they
+ * are interacting with (not the dApp origin, which lives in its own
+ * {@link OriginBlock} card). The section header reads "Address · {alias}" when
+ * an on-chain alias/ENS name is known, falling back to a truncated hex address.
+ *
+ * Two variants compose the shared safety/familiarity renderers over the address
+ * payloads. The 'primary' variant shows the high-value tier inline on the
+ * primary insight (critical reports, 1st-degree flags/provenance, and the 1-hop
+ * "People you follow" block). The 'more' variant shows the lower-weight tier
+ * pushed behind "More info" (2nd-degree flags/provenance and the
+ * "Friends of people you follow" block). Each renderer is bare (no Section of
+ * its own) so this single Section is the only card chrome.
+ *
+ * @module components/Address
+ */
+
+import { Heading, Section } from '@metamask/snaps-sdk/jsx';
+
+import type { SafetyData } from '../safety/types';
+import type { NetworkFamiliarity } from '../trusted-circle/types';
+import type { AccountProps } from '../types';
+import {
+  renderOneHopFamiliarity,
+  renderExtendedFamiliarity,
+} from './NetworkFamiliarity';
+import { renderPrimarySafety, renderExtendedSafety } from './Safety';
+
+const ADDRESS_PREFIX_LEN = 6;
+const ADDRESS_SUFFIX_LEN = 4;
+
+/**
+ * Truncates a hex address for display ("0x1234…cdef"). Short or non-hex strings
+ * are returned unchanged.
+ *
+ * @param address - The destination address.
+ * @returns The truncated address.
+ */
+function truncateAddress(address: string): string {
+  if (address.length <= ADDRESS_PREFIX_LEN + ADDRESS_SUFFIX_LEN) {
+    return address;
+  }
+  return `${address.slice(0, ADDRESS_PREFIX_LEN)}…${address.slice(
+    -ADDRESS_SUFFIX_LEN,
+  )}`;
+}
+
+/**
+ * The display label for the address card: the on-chain alias/ENS name when
+ * known, otherwise the truncated hex address.
+ *
+ * @param accountProps - Account props (carries alias + address).
+ * @returns The header label.
+ */
+function addressLabel(accountProps: AccountProps): string {
+  const alias = accountProps.alias?.trim();
+  if (alias) {
+    return alias;
+  }
+  return truncateAddress(accountProps.address);
+}
+
+/**
+ * Heading for the address card, scoped to the alias/address.
+ *
+ * @param props - Props.
+ * @param props.accountProps - Account props for the label.
+ * @returns The address heading.
+ */
+const AddressHeading = ({ accountProps }: { accountProps: AccountProps }) => (
+  <Heading size="sm">{`Address · ${addressLabel(accountProps)}`}</Heading>
+);
+
+/**
+ * Renders the destination-address subject card.
+ *
+ * @param props - Block props.
+ * @param props.variant - Which slice to render: the inline primary tier or the more-info remainder.
+ * @param props.accountProps - Account props (alias + address) for the header.
+ * @param props.safety - The address's classified safety data, or undefined.
+ * @param props.familiarity - The address's network familiarity, or undefined.
+ * @returns The address card JSX, or null when there is nothing to show.
+ */
+export const AddressBlock = ({
+  variant,
+  accountProps,
+  safety,
+  familiarity,
+}: {
+  variant: 'primary' | 'more';
+  accountProps: AccountProps;
+  safety: SafetyData | undefined;
+  familiarity: NetworkFamiliarity | undefined;
+}) => {
+  if (variant === 'primary') {
+    const primarySafety = renderPrimarySafety(safety);
+    const oneHop = renderOneHopFamiliarity(familiarity);
+    if (!primarySafety && !oneHop) {
+      return null;
+    }
+    return (
+      <Section>
+        <AddressHeading accountProps={accountProps} />
+        {primarySafety}
+        {oneHop}
+      </Section>
+    );
+  }
+
+  // 'more' variant: 2nd-degree safety + 2nd-degree familiarity.
+  const extendedSafety = renderExtendedSafety(safety);
+  const extendedFamiliarity = renderExtendedFamiliarity(familiarity);
+  if (!extendedSafety && !extendedFamiliarity) {
+    return null;
+  }
+  return (
+    <Section>
+      <AddressHeading accountProps={accountProps} />
+      {extendedSafety}
+      {extendedFamiliarity}
+    </Section>
+  );
+};
