@@ -222,16 +222,18 @@ query TripleWithPositionAggregates($subjectId: String!, $predicateId: String!, $
 
 /**
  * Query to find an atom by URL (for origin trust signals).
- * Searches by label or data field matching the origin URL.
+ * Matches any of the canonical + legacy label variants (exact `_in`) against
+ * label or data, so atoms minted under the new `https://` paradigm AND legacy
+ * bare-hostname / http / www forms all resolve.
  * Orders by total_market_cap to prefer the most-staked (canonical) atom.
  */
 export const getOriginAtomQuery = `
-query OriginAtom($originUrl: String!) {
+query OriginAtom($labels: [String!]!) {
   atoms(
     where: {
       _or: [
-        { label: { _ilike: $originUrl } },
-        { data: { _ilike: $originUrl } }
+        { label: { _in: $labels } },
+        { data: { _in: $labels } }
       ]
     },
     order_by: { term: { total_market_cap: desc_nulls_last } },
@@ -400,6 +402,71 @@ query AllClaimsAboutAtom($subjectId: String!) {
 
     counter_positions(order_by: { shares: desc }, limit: 20) {
       account_id
+      shares
+    }
+  }
+}
+`;
+
+/**
+ * Query to fetch the VIEWER'S OWN claims about a subject atom.
+ *
+ * Returns triples where the subject is the target atom (address or origin) AND
+ * the viewer holds a position — FOR (`positions`) or AGAINST
+ * (`counter_positions`) — on the triple. This is the "Self" lane: the user's own
+ * staked opinions about the subject, surfaced independently of their trusted
+ * circle so a personal signal ("I tagged this trustworthy") is always shown back
+ * to them.
+ *
+ * Unlike the familiarity lane this is NOT gated by the familiarity whitelist —
+ * any claim the viewer staked is theirs to see — but the consumer still applies
+ * the blacklist (non-canonical/duplicate atoms) and the safety-dedup exclusion
+ * set so each claim has exactly one home.
+ *
+ * `user_position` / `user_counter_position` are the viewer's own shares on each
+ * side; the consumer reads them to derive the stance (FOR vs AGAINST). The
+ * `_ilike` match on `account_id` mirrors the existing self-position pattern in
+ * `getTripleWithPositionsDataQuery` (the viewer's own address, any casing).
+ *
+ * Variables:
+ *  - subjectId: term_id of the target atom
+ *  - userAddress: the viewer's wallet address
+ */
+export const getSelfClaimsAboutAtomQuery = `
+query SelfClaimsAboutAtom($subjectId: String!, $userAddress: String!) {
+  triples(
+    where: {
+      subject_id: { _eq: $subjectId },
+      _or: [
+        { positions: { account_id: { _ilike: $userAddress } } },
+        { counter_positions: { account_id: { _ilike: $userAddress } } }
+      ]
+    },
+    order_by: { triple_term: { total_market_cap: desc_nulls_last } },
+    limit: 20
+  ) {
+    term_id
+    predicate_id
+    object_id
+
+    predicate {
+      label
+    }
+    object {
+      label
+    }
+
+    user_position: positions(
+      where: { account_id: { _ilike: $userAddress } },
+      limit: 1
+    ) {
+      shares
+    }
+
+    user_counter_position: counter_positions(
+      where: { account_id: { _ilike: $userAddress } },
+      limit: 1
+    ) {
       shares
     }
   }

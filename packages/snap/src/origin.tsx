@@ -1,6 +1,7 @@
 import { getOriginAtomQuery, graphQLQuery } from './queries';
 import type { Origin } from './types';
 import { OriginType } from './types';
+import { canonicalizeWebUrl } from './util';
 
 export type GetOriginDataResult = {
   origin: Origin | null;
@@ -54,25 +55,20 @@ export const getOriginData = async (
   }
 
   try {
-    // Query for the origin atom using the full URL
+    // Match the canonical `https://` form AND legacy variants (bare hostname,
+    // http, www) in a single query so atoms minted under any historical form
+    // still resolve. See canonicalizeWebUrl.
+    const canon = canonicalizeWebUrl(transactionOrigin);
+    const labels = canon?.queryVariants ?? [transactionOrigin, hostname];
+
     const atomResponse = await graphQLQuery(getOriginAtomQuery, {
-      originUrl: transactionOrigin,
+      labels,
     });
 
     const originAtom = atomResponse.data.atoms?.[0] as Origin | undefined;
 
-    if (originAtom) {
-      return { origin: originAtom, hostname };
-    }
-
-    // If no atom found, try with just the hostname
-    const hostnameResponse = await graphQLQuery(getOriginAtomQuery, {
-      originUrl: hostname,
-    });
-    const hostnameAtom = hostnameResponse.data.atoms?.[0] as Origin | undefined;
-
     return {
-      origin: hostnameAtom ?? null,
+      origin: originAtom ?? null,
       hostname,
     };
   } catch {
