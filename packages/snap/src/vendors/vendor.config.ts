@@ -115,10 +115,19 @@ const resolveAddressForUrl = (params: {
   isContract: boolean;
   chainId: string;
 }): string => {
-  if (params.isContract) {
-    return addressToCaip10(params.address, params.chainId);
-  }
-  return params.address;
+  const resolved = params.isContract
+    ? addressToCaip10(params.address, params.chainId)
+    : params.address;
+
+  console.log('[resolveAddressForUrl] url address decision', {
+    address: params.address,
+    isContract: params.isContract,
+    chainId: params.chainId,
+    resolved,
+    format: params.isContract ? 'caip10' : 'plain',
+  });
+
+  return resolved;
 };
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -226,15 +235,16 @@ export const vendorConfig: VendorConfig = {
 
   /**
    * No atom exists for this origin URL (unknown dApp).
-   * Link to domain page with ?action=trust to open create claim modal.
+   * Link to the domain page with ?action=trust-claim to open the sentiment
+   * chooser ("Trustworthy" / "Suspicious") in the create-claim modal.
    *
    * Uses hostname (e.g., "app.uniswap.org") not normalized domain.
    * This ensures subdomain-level precision for trust signals.
    *
    * The Explorer will:
-   * 1. Detect no atom exists
-   * 2. Open CreateClaimModal with subjectData (hostname)
-   * 3. Modal creates atom + trust triple in one flow
+   * 1. Open CreateClaimModal in sentiment-choice mode (no atom needed yet)
+   * 2. User picks Trustworthy or Suspicious ([hostname] → hasTag → [sentiment])
+   * 3. Modal creates the subject/object atoms (if missing) + triple in one flow
    * @param params
    */
   originNoAtom: (params) => {
@@ -246,7 +256,7 @@ export const vendorConfig: VendorConfig = {
     }
 
     const url = new URL(`/domain/${encodeURIComponent(hostname)}`, baseUrl);
-    url.searchParams.set('action', 'trust');
+    url.searchParams.set('action', 'trust-claim');
 
     return { url: url.toString() };
   },
