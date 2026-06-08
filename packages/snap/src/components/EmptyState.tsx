@@ -14,9 +14,34 @@
  * @module components/EmptyState
  */
 
-import { Section, Text, Heading } from '@metamask/snaps-sdk/jsx';
+import { Section, Text, Heading, Row } from '@metamask/snaps-sdk/jsx';
 
+import type { AddressClassification } from '../types';
 import { isFirstPartyExtensionOrigin } from '../util';
+
+/**
+ * Human label for an address classification, used in the empty state so the
+ * user still learns what KIND of destination they are interacting with even
+ * when Hive Mind has no community signals. Softened ("Likely smart contract")
+ * when classification is uncertain so we never overclaim.
+ *
+ * @param classification - The address classification result.
+ * @returns A short label, or null when the type is unknown/uncertain.
+ */
+const accountTypeLabel = (
+  classification: AddressClassification | undefined,
+): string | null => {
+  if (!classification) {
+    return null;
+  }
+  if (classification.type === 'contract') {
+    return 'Smart contract';
+  }
+  if (classification.type === 'eoa') {
+    return 'Wallet (EOA)';
+  }
+  return 'Likely smart contract';
+};
 
 /**
  * The neutral empty-state notice: an honest status line and a negative-leaning
@@ -24,18 +49,36 @@ import { isFirstPartyExtensionOrigin } from '../util';
  * about scams) and keeps the action open (flag or vouch) without accusing the
  * specific address. It motivates the footer CTA below; it is not a button.
  *
+ * When the destination's classification is known, an "Account type" row is
+ * shown so the user still learns whether they are interacting with a smart
+ * contract or a regular wallet even with zero community signals.
+ *
+ * @param props - Props.
+ * @param props.classification - The destination's address classification, if known.
  * @returns The empty-state notice JSX.
  */
-export const EmptyStateNotice = () => (
-  <Section>
-    <Heading size="md">No signals yet</Heading>
-    <Text>No community signals on this address yet — not an endorsement.</Text>
-    <Text>
-      Spotted a scam — or know it&apos;s safe? Add the first claim to warn
-      others.
-    </Text>
-  </Section>
-);
+export const EmptyStateNotice = ({
+  classification,
+}: {
+  classification?: AddressClassification | undefined;
+}) => {
+  const typeLabel = accountTypeLabel(classification);
+  return (
+    <Section>
+      <Heading size="md">No signals yet</Heading>
+      {typeLabel ? (
+        <Row label="Account type">
+          <Text color="muted">{typeLabel}</Text>
+        </Row>
+      ) : null}
+      <Text>No community signals on this address yet — not an endorsement.</Text>
+      <Text>
+        Spotted a scam — or know it&apos;s safe? Add the first claim to warn
+        others.
+      </Text>
+    </Section>
+  );
+};
 
 /**
  * Muted provenance line shown when the transaction originated from our own

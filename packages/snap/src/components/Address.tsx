@@ -29,7 +29,7 @@ import {
   renderSelfClaims,
 } from './NetworkFamiliarity';
 import { renderPrimarySafety, renderExtendedSafety } from './Safety';
-import { isHexAddress } from './ui';
+import { AccountTypeBadge, isHexAddress } from './ui';
 
 /**
  * Heading for the address card: a plain "Destination" label (`md` subject
@@ -97,6 +97,7 @@ export const AddressBlock = ({
     return (
       <Section>
         <AddressHeading accountProps={accountProps} />
+        <AccountTypeBadge classification={accountProps.classification} />
         {primarySafety}
         {self}
         {oneHop}
@@ -113,6 +114,7 @@ export const AddressBlock = ({
   return (
     <Section>
       <AddressHeading accountProps={accountProps} />
+      <AccountTypeBadge classification={accountProps.classification} />
       {extendedSafety}
       {extendedFamiliarity}
     </Section>

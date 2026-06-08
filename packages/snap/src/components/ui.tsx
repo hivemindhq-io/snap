@@ -15,8 +15,11 @@ import {
   Heading,
   Text,
   Address,
+  Row,
   type IconName,
 } from '@metamask/snaps-sdk/jsx';
+
+import type { AddressClassification } from '../types';
 
 const HEX_ADDRESS = /^0x[a-fA-F0-9]{40}$/u;
 
@@ -101,3 +104,50 @@ export const AccountLabel = ({
   ) : (
     <Text color="muted">{label}</Text>
   );
+
+/**
+ * Renders a single "Account type" row stating whether the destination is a
+ * smart contract or a regular wallet (EOA), so the user can tell at a glance
+ * what kind of thing they are interacting with.
+ *
+ * The label is softened when classification is uncertain (`eth_getCode` failed
+ * and the API couldn't decide): in that case we show "Likely smart contract"
+ * rather than overclaiming a definite result. A definite EOA reads as "Wallet
+ * (EOA)" and a definite contract as "Smart contract".
+ *
+ * Note: a definite contract here is most often inferred from the transaction
+ * carrying calldata (a contract call), not from confirmed bytecode — but for
+ * the user the meaningful fact is "this is a contract interaction", which the
+ * calldata reliably establishes.
+ *
+ * @param props - Props.
+ * @param props.classification - The address classification result.
+ * @returns A single labeled row describing the account type.
+ */
+export const AccountTypeBadge = ({
+  classification,
+}: {
+  classification: AddressClassification;
+}) => {
+  if (classification.type === 'contract') {
+    return (
+      <Row label="Account type">
+        <Text color="muted">Smart contract</Text>
+      </Row>
+    );
+  }
+  if (classification.type === 'eoa') {
+    return (
+      <Row label="Account type">
+        <Text color="muted">Wallet (EOA)</Text>
+      </Row>
+    );
+  }
+  // Uncertain: eth_getCode failed and the multi-chain API couldn't decide. Don't
+  // overclaim — present it as a best guess.
+  return (
+    <Row label="Account type">
+      <Text color="muted">Likely smart contract</Text>
+    </Row>
+  );
+};

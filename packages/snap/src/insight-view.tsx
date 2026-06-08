@@ -287,11 +287,19 @@ export function buildPrimaryInsight(model: InsightModel) {
     />
   );
 
-  // Branch 1 — Empty: honest "nothing here yet" notice.
+  // Branch 1 — Empty: honest "nothing here yet" notice. Still surfaces the
+  // destination's account type (contract vs wallet) when known and the
+  // destination isn't suppressed (self-calls have no meaningful destination).
   if (isEmptyInsight(model)) {
     return (
       <Box>
-        <EmptyStateNotice />
+        <EmptyStateNotice
+          classification={
+            model.suppressAccount
+              ? undefined
+              : model.accountProps.classification
+          }
+        />
         {provenance}
         {footer}
       </Box>
