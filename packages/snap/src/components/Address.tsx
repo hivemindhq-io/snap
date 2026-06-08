@@ -21,11 +21,12 @@
 import { Box, Heading, Section, Address } from '@metamask/snaps-sdk/jsx';
 
 import type { SafetyData } from '../safety/types';
-import type { NetworkFamiliarity } from '../trusted-circle/types';
+import type { NetworkFamiliarity, SelfClaims } from '../trusted-circle/types';
 import type { AccountProps } from '../types';
 import {
   renderOneHopFamiliarity,
   renderExtendedFamiliarity,
+  renderSelfClaims,
 } from './NetworkFamiliarity';
 import { renderPrimarySafety, renderExtendedSafety } from './Safety';
 import { isHexAddress } from './ui';
@@ -68,6 +69,7 @@ const AddressHeading = ({ accountProps }: { accountProps: AccountProps }) => {
  * @param props.accountProps - Account props (alias + address) for the header.
  * @param props.safety - The address's classified safety data, or undefined.
  * @param props.familiarity - The address's network familiarity, or undefined.
+ * @param props.selfClaims - The viewer's own claims about the address, or undefined.
  * @returns The address card JSX, or null when there is nothing to show.
  */
 export const AddressBlock = ({
@@ -75,22 +77,28 @@ export const AddressBlock = ({
   accountProps,
   safety,
   familiarity,
+  selfClaims,
 }: {
   variant: 'primary' | 'more';
   accountProps: AccountProps;
   safety: SafetyData | undefined;
   familiarity: NetworkFamiliarity | undefined;
+  selfClaims?: SelfClaims | undefined;
 }) => {
   if (variant === 'primary') {
     const primarySafety = renderPrimarySafety(safety);
+    // The viewer's own staked claims ("Your take") render inline, between the
+    // safety surface and the people-you-follow familiarity block.
+    const self = renderSelfClaims(selfClaims);
     const oneHop = renderOneHopFamiliarity(familiarity);
-    if (!primarySafety && !oneHop) {
+    if (!primarySafety && !self && !oneHop) {
       return null;
     }
     return (
       <Section>
         <AddressHeading accountProps={accountProps} />
         {primarySafety}
+        {self}
         {oneHop}
       </Section>
     );

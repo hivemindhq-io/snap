@@ -15,6 +15,7 @@ import {
   getExtendedNetworkQuery,
   getAtomsForAddressesQuery,
   getAllClaimsAboutAtomQuery,
+  getSelfClaimsAboutAtomQuery,
 } from '../queries';
 import {
   chainConfig,
@@ -40,6 +41,8 @@ import type {
   ClaimContext,
   ExtendedContact,
   ExtendedNetwork,
+  SelfClaim,
+  SelfClaims,
 } from './types';
 
 /**
@@ -896,6 +899,157 @@ export async function getNetworkFamiliarity(
     return result;
   } catch (error) {
     console.error('[TrustedCircle] Network familiarity query failed:', error);
+    return undefined;
+  }
+}
+
+/**
+ * Response shape from the "self claims about atom" query.
+ */
+interface SelfClaimsResponse {
+  data: {
+    triples: {
+      term_id: string;
+      predicate_id: string;
+      object_id: string;
+      predicate: { label: string } | null;
+      object: { label: string } | null;
+      user_position: { shares: string }[];
+      user_counter_position: { shares: string }[];
+    }[];
+  };
+}
+
+/**
+ * Whether a shares array carries a non-zero stake. The query already filters to
+ * triples the viewer holds a position on, but a stale/zeroed row could slip
+ * through, so shares are read defensively rather than trusting mere presence.
+ *
+ * @param positions - The viewer's position rows for one side of a triple.
+ * @returns True when at least one row carries a positive (or non-numeric) stake.
+ */
+function hasStake(positions: { shares: string }[] | undefined): boolean {
+  if (!positions || positions.length === 0) {
+    return false;
+  }
+  for (const position of positions) {
+    try {
+      if (BigInt(position.shares ?? '0') > 0n) {
+        return true;
+      }
+    } catch {
+      // Non-numeric shares — treat the row's presence as a held position.
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Fetches the VIEWER'S OWN claims about a subject atom — the "Self" lane.
+ *
+ * Returns every triple about `subjectAtomId` on which the viewer holds a
+ * position (FOR or AGAINST), classified by stance. Unlike
+ * {@link getNetworkFamiliarity} this is NOT gated by the familiarity whitelist
+ * (any claim the viewer staked is theirs to see) and does NOT depend on the
+ * trusted circle — it surfaces a personal signal back to the viewer.
+ *
+ * The blacklist (non-canonical/duplicate atoms) and the safety-dedup exclusion
+ * set are still applied so a rogue atom is suppressed and no claim that already
+ * lives in the safety surface renders twice.
+ *
+ * @param subjectAtomId - The term_id of the subject atom (address or origin).
+ * @param userAddress - The viewer's wallet address.
+ * @param excludeTermIds - Triple term_ids already surfaced by the safety lane.
+ * @param registry - Optional claim-template registry for predicate-key phrasing.
+ * @returns The viewer's claims, or undefined when there are none.
+ */
+export async function getSelfClaims(
+  subjectAtomId: string,
+  userAddress: string,
+  excludeTermIds?: Set<string>,
+  registry?: ClaimTemplateRegistry,
+): Promise<SelfClaims | undefined> {
+  try {
+    const response = (await graphQLQuery(getSelfClaimsAboutAtomQuery, {
+      subjectId: subjectAtomId,
+      userAddress,
+    })) as SelfClaimsResponse;
+
+    const triples = response?.data?.triples || [];
+    if (triples.length === 0) {
+      return undefined;
+    }
+
+    // Resolve each claim's `predicate_id` to its first-class registry key (e.g.
+    // 'hasTag') for natural-language phrasing, mirroring the familiarity lane.
+    const predIdToKey = new Map<string, string>(
+      registry
+        ? Object.entries(registry.predicates).map(([key, id]) => [id, key])
+        : [],
+    );
+
+    // Suppression set: union the live registry blacklist with the offline seed.
+    const blacklist = new Set<string>([
+      ...(registry?.blacklistedTermIds ?? []),
+      ...BLACKLISTED_TERM_IDS,
+    ]);
+
+    const claims: SelfClaim[] = [];
+    for (const triple of triples) {
+      // Dedup: already surfaced in the safety lane — skip so it has one home.
+      if (excludeTermIds?.has(triple.term_id)) {
+        continue;
+      }
+
+      // Suppress blacklisted (non-canonical / duplicate) atoms.
+      if (
+        blacklist.has(triple.predicate_id) ||
+        blacklist.has(triple.object_id) ||
+        blacklist.has(triple.term_id)
+      ) {
+        continue;
+      }
+
+      // Derive stance: FOR when the viewer holds a support position, else
+      // AGAINST when they hold a counter position. A row with both (rare) is
+      // treated as FOR, since support is the primary lane.
+      const isFor = hasStake(triple.user_position);
+      const isAgainst = hasStake(triple.user_counter_position);
+      if (!isFor && !isAgainst) {
+        continue;
+      }
+      const stance: 'for' | 'against' = isFor ? 'for' : 'against';
+
+      const predicateLabel = triple.predicate?.label || 'unknown';
+      const objectLabel = triple.object?.label || 'unknown';
+      const predicateKey = predIdToKey.get(triple.predicate_id);
+
+      claims.push({
+        predicateLabel,
+        objectLabel,
+        // The viewer's own claims are always inline-eligible (primary tier).
+        tier: 'primary',
+        stance,
+        ...(predicateKey ? { predicateKey } : {}),
+      });
+    }
+
+    if (claims.length === 0) {
+      return undefined;
+    }
+
+    console.log('[SelfClaims] resolved viewer claims', {
+      subjectAtomId,
+      count: claims.length,
+      stances: claims.map(
+        (c) => `${c.predicateLabel} ${c.objectLabel} (${c.stance})`,
+      ),
+    });
+
+    return { claims };
+  } catch (error) {
+    console.error('[SelfClaims] Self claims query failed:', error);
     return undefined;
   }
 }

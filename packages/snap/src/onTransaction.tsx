@@ -22,11 +22,12 @@ import {
   getTrustedCircle,
   getNetworkFamiliarity,
   getExtendedNetwork,
+  getSelfClaims,
   indexExtendedNetwork,
 } from './trusted-circle';
-import type { NetworkFamiliarity } from './trusted-circle';
+import type { NetworkFamiliarity, SelfClaims } from './trusted-circle';
 import type { AccountProps, OriginProps } from './types';
-import { shouldSuppressOrigin } from './util';
+import { isSelfCall, shouldSuppressOrigin } from './util';
 
 export const onTransaction: OnTransactionHandler = async ({
   transaction,
@@ -39,6 +40,22 @@ export const onTransaction: OnTransactionHandler = async ({
 }) => {
   // "to" ENS addresses arrive here as EVM addresses, EVM addresses arrive as EVM addresses
   const userAddress: string | undefined = transaction.from;
+
+  // Self-call detection: when the destination is the user's own account the
+  // transaction is a smart-account batch (EIP-5792 / ERC-7821) whose real
+  // counterparties live inside the calldata, not in `to`. Vetting the user's own
+  // address is semantically meaningless, so the destination surface is
+  // suppressed entirely (mirrors `suppressOrigin`).
+  const suppressAccount = isSelfCall(transaction.to, userAddress);
+  if (suppressAccount) {
+    console.log(
+      '[onTransaction] self-call detected; suppressing address surface',
+      {
+        to: transaction.to,
+        from: userAddress,
+      },
+    );
+  }
 
   const [
     accountData,
@@ -84,7 +101,7 @@ export const onTransaction: OnTransactionHandler = async ({
   // circle. Computed before familiarity so the term_ids it surfaces can be
   // excluded from the familiarity section (Opt 3 dedup — one home per claim).
   let accountSafety: SafetyData | undefined;
-  if (accountData.account) {
+  if (accountData.account && !suppressAccount) {
     accountSafety = await getSafetyData(accountData.account.term_id, {
       registry: claimTemplates,
       trustedCircle,
@@ -113,13 +130,27 @@ export const onTransaction: OnTransactionHandler = async ({
   // address). The `has tag → trustworthy` triple is no longer special-cased —
   // it surfaces here as a regular claim like any other.
   let accountNetworkFamiliarity: NetworkFamiliarity | undefined;
-  if (trustedCircle.length > 0 && accountData.account) {
+  if (trustedCircle.length > 0 && accountData.account && !suppressAccount) {
     accountNetworkFamiliarity = await getNetworkFamiliarity(
       accountData.account.term_id,
       trustedCircle,
       new Set<string>(),
       userAddress,
       EXTENDED_NETWORK_ENABLED ? extendedIndex : undefined,
+      safetyTermIds,
+      claimTemplates,
+    );
+  }
+
+  // The viewer's OWN staked claims about the destination address ("Your take").
+  // Independent of the trusted circle — a personal signal ("I tagged this
+  // trustworthy") is always surfaced back to the viewer. Safety-surfaced claims
+  // are excluded so each claim has exactly one home.
+  let accountSelfClaims: SelfClaims | undefined;
+  if (userAddress && accountData.account && !suppressAccount) {
+    accountSelfClaims = await getSelfClaims(
+      accountData.account.term_id,
+      userAddress,
       safetyTermIds,
       claimTemplates,
     );
@@ -178,6 +209,20 @@ export const onTransaction: OnTransactionHandler = async ({
     );
   }
 
+  // The viewer's OWN staked claims about the dApp origin ("Your take").
+  // Independent of the trusted circle so a personal signal on a domain (e.g. "I
+  // tagged this site trustworthy") surfaces on the primary insight. Safety-
+  // surfaced claims are excluded so each claim has exactly one home.
+  let originSelfClaims: SelfClaims | undefined;
+  if (userAddress && originData.origin && !suppressOrigin) {
+    originSelfClaims = await getSelfClaims(
+      originData.origin.term_id,
+      userAddress,
+      originSafetyTermIds,
+      claimTemplates,
+    );
+  }
+
   // Create properly typed props based on account type
   const accountProps: AccountProps = {
     ...accountData,
@@ -214,11 +259,14 @@ export const onTransaction: OnTransactionHandler = async ({
   const model: InsightModel = jsonClone({
     safety: accountSafety ?? null,
     familiarity: accountNetworkFamiliarity ?? null,
+    selfClaims: accountSelfClaims ?? null,
     originSafety: originSafety ?? null,
     originFamiliarity: originNetworkFamiliarity ?? null,
+    originSelfClaims: originSelfClaims ?? null,
     accountProps: footerAccountProps as AccountProps,
     originProps,
     suppressOrigin,
+    suppressAccount,
   });
 
   // An interactive interface is only needed when a "More info" button renders —

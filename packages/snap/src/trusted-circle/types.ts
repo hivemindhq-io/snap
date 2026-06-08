@@ -123,6 +123,36 @@ export interface NetworkFamiliarity {
 }
 
 // ────────────────────────────────────────────────────────────────────────────
+// Self lane — the viewer's OWN claims about a subject.
+//
+// Independent of the trusted circle and the familiarity whitelist: any claim the
+// viewer has personally staked (FOR or AGAINST) on the subject is surfaced back
+// to them inline ("Your take"). The blacklist and the safety-dedup exclusion set
+// still apply so a rogue/duplicate atom is suppressed and no claim renders twice.
+// ────────────────────────────────────────────────────────────────────────────
+
+/**
+ * A single claim the VIEWER has staked on about the subject, with the stance
+ * derived from which side they hold a position on:
+ *   - `'for'`     → the viewer holds a FOR position (they assert the claim),
+ *   - `'against'` → the viewer holds an AGAINST position (they dispute it).
+ */
+export interface SelfClaim extends ClaimContext {
+  /** Which side the viewer staked on. */
+  stance: 'for' | 'against';
+}
+
+/**
+ * The viewer's own claims about a subject (address or origin). Absent/empty ⇒
+ * the viewer has no staked opinion on the subject and the "Your take" block is
+ * not rendered.
+ */
+export interface SelfClaims {
+  /** The viewer's staked claims, ordered by total market cap (desc). */
+  claims: SelfClaim[];
+}
+
+// ────────────────────────────────────────────────────────────────────────────
 // Extended network (2-hop "friend-of-a-friend") — see docs/extended-network-spec.md
 //
 // The extended network is the union of `[F] follow [G]` edges for every direct

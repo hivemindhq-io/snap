@@ -15,6 +15,7 @@ import type {
   ClaimContext,
   FamiliarContact,
   NetworkFamiliarity,
+  SelfClaims,
 } from '../trusted-circle/types';
 import { AccountLabel, SectionHeading } from './ui';
 
@@ -437,6 +438,44 @@ export const renderNetworkInsight = (
     <Box>
       {oneHop}
       {extended}
+    </Box>
+  );
+};
+
+/**
+ * Renders the "Your take" block — the viewer's OWN staked claims about the
+ * subject (the "Self" lane). Surfaced inline on the primary insight so a
+ * personal signal ("I tagged this trustworthy") is always shown back to the
+ * viewer, independent of their trusted circle and the familiarity whitelist.
+ *
+ * FOR claims render as the claim phrase with a muted "You" marker; AGAINST
+ * claims render with a `warning` row variant and a "You disputed" marker so a
+ * dispute reads as a caution rather than an endorsement. The phrasing reuses
+ * {@link phraseClaim} so a self claim reads identically to the same claim in the
+ * familiarity lanes. Returns null when the viewer has no staked claims.
+ *
+ * @param selfClaims - The viewer's own claims about the subject, or undefined.
+ * @returns JSX element or null.
+ */
+export const renderSelfClaims = (selfClaims: SelfClaims | undefined) => {
+  if (!selfClaims || selfClaims.claims.length === 0) {
+    return null;
+  }
+
+  return (
+    <Box>
+      <SectionHeading>Your take</SectionHeading>
+      {selfClaims.claims.map((claim) =>
+        claim.stance === 'against' ? (
+          <Row label={phraseClaim(claim)} variant="warning">
+            <Text color="warning">You disputed</Text>
+          </Row>
+        ) : (
+          <Row label={phraseClaim(claim)}>
+            <Text color="muted">You</Text>
+          </Row>
+        ),
+      )}
     </Box>
   );
 };

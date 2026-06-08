@@ -31,9 +31,10 @@ import {
   renderCriticalSafety,
   renderOneHopFamiliarity,
   renderExtendedFamiliarity,
+  renderSelfClaims,
 } from './components';
 import type { SafetyData } from './safety/types';
-import type { NetworkFamiliarity } from './trusted-circle/types';
+import type { NetworkFamiliarity, SelfClaims } from './trusted-circle/types';
 import type { AccountProps, OriginProps } from './types';
 
 /** Button names that drive navigation between the primary and More info pages. */
@@ -51,16 +52,26 @@ export type InsightModel = {
   safety: SafetyData | null;
   /** Destination address: 1-hop + 2-hop familiarity data, or null. */
   familiarity: NetworkFamiliarity | null;
+  /** Destination address: the viewer's OWN staked claims ("Your take"), or null. */
+  selfClaims: SelfClaims | null;
   /** dApp origin: classified safety data (URL/site vocabulary), or null. */
   originSafety: SafetyData | null;
   /** dApp origin: 1-hop + 2-hop familiarity data, or null. */
   originFamiliarity: NetworkFamiliarity | null;
+  /** dApp origin: the viewer's OWN staked claims ("Your take"), or null. */
+  originSelfClaims: SelfClaims | null;
   /** Account props used by the footer CTAs. */
   accountProps: AccountProps;
   /** Origin props used by the origin block + footer. */
   originProps: OriginProps;
   /** Whether the origin section is suppressed (metamask/localhost/no origin). */
   suppressOrigin: boolean;
+  /**
+   * Whether the destination-address section is suppressed. True for self-calls
+   * (`to === from`), i.e. smart-account batch executions where the real targets
+   * live inside the calldata and vetting the user's own address is meaningless.
+   */
+  suppressAccount: boolean;
 };
 
 /**
@@ -120,9 +131,12 @@ export function hasMoreInfo(model: InsightModel): boolean {
   const originSafety = model.originSafety ?? undefined;
   const originFamiliarity = model.originFamiliarity ?? undefined;
 
+  // When the destination is suppressed (self-call) the address card never
+  // renders, so it can never contribute "More info" content.
   const addressMore =
-    renderExtendedSafety(safety) !== null ||
-    renderExtendedFamiliarity(familiarity) !== null;
+    !model.suppressAccount &&
+    (renderExtendedSafety(safety) !== null ||
+      renderExtendedFamiliarity(familiarity) !== null);
 
   // When the origin is suppressed (no origin / metamask / localhost / any
   // browser-extension origin) the dApp block never renders, so it can never
@@ -153,13 +167,29 @@ export function hasMoreInfo(model: InsightModel): boolean {
  */
 export function hasPrimaryContent(model: InsightModel): boolean {
   const hasAddressSafety =
+    !model.suppressAccount &&
     renderPrimarySafety(model.safety ?? undefined) !== null;
   const hasAddressFamiliarity =
+    !model.suppressAccount &&
     renderOneHopFamiliarity(model.familiarity ?? undefined) !== null;
+  // The viewer's own staked claims ("Your take") are primary content: a personal
+  // signal anchors the inline insight even when nothing else does.
+  const hasAddressSelf =
+    !model.suppressAccount &&
+    renderSelfClaims(model.selfClaims ?? undefined) !== null;
   const hasDappPrimary =
     !model.suppressOrigin &&
     renderCriticalSafety(model.originSafety ?? undefined) !== null;
-  return hasAddressSafety || hasAddressFamiliarity || hasDappPrimary;
+  const hasDappSelf =
+    !model.suppressOrigin &&
+    renderSelfClaims(model.originSelfClaims ?? undefined) !== null;
+  return (
+    hasAddressSafety ||
+    hasAddressFamiliarity ||
+    hasAddressSelf ||
+    hasDappPrimary ||
+    hasDappSelf
+  );
 }
 
 /**
@@ -242,8 +272,10 @@ function dappCardFirst(
 export function buildPrimaryInsight(model: InsightModel) {
   const safety = model.safety ?? undefined;
   const familiarity = model.familiarity ?? undefined;
+  const selfClaims = model.selfClaims ?? undefined;
   const originSafety = model.originSafety ?? undefined;
   const originFamiliarity = model.originFamiliarity ?? undefined;
+  const originSelfClaims = model.originSelfClaims ?? undefined;
 
   const provenance = renderFirstPartyProvenance(model.originProps.originUrl);
   const footer = (
@@ -251,6 +283,7 @@ export function buildPrimaryInsight(model: InsightModel) {
       accountProps={model.accountProps}
       originProps={model.originProps}
       suppressOrigin={model.suppressOrigin}
+      suppressAccount={model.suppressAccount}
     />
   );
 
@@ -268,7 +301,7 @@ export function buildPrimaryInsight(model: InsightModel) {
   // Branch 2 — Promote: no primary tier, but more-info content exists. Render
   // the 'more' variant cards inline (address-first, no tiebreak, no button).
   if (!hasPrimaryContent(model)) {
-    const addressCard = (
+    const addressCard = model.suppressAccount ? null : (
       <AddressBlock
         variant="more"
         accountProps={model.accountProps}
@@ -297,12 +330,13 @@ export function buildPrimaryInsight(model: InsightModel) {
   // Branch 3 — Primary populated. Each subject is grouped into a single labeled
   // card (no interleaving), then ordered so a critical report floats to the top
   // (address-first tiebreak).
-  const addressCard = (
+  const addressCard = model.suppressAccount ? null : (
     <AddressBlock
       variant="primary"
       accountProps={model.accountProps}
       safety={safety}
       familiarity={familiarity}
+      selfClaims={selfClaims}
     />
   );
   const dappCard = model.suppressOrigin ? null : (
@@ -311,6 +345,7 @@ export function buildPrimaryInsight(model: InsightModel) {
       originProps={model.originProps}
       safety={originSafety}
       familiarity={originFamiliarity}
+      selfClaims={originSelfClaims}
     />
   );
   const dappFirst = dappCardFirst(
@@ -346,7 +381,7 @@ export function buildMoreInfoInsight(model: InsightModel) {
   // Same subject grouping as the primary view. The "More info" page never
   // carries critical reports (those float up to the primary view), so ordering
   // falls back to the address-first default.
-  const addressCard = (
+  const addressCard = model.suppressAccount ? null : (
     <AddressBlock
       variant="more"
       accountProps={model.accountProps}

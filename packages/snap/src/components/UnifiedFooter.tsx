@@ -21,22 +21,26 @@ import { SiteAction } from './Footer/actions/SiteActions';
  * @param options0.accountProps - Destination-address props for the address action.
  * @param options0.originProps - Origin props for the site action.
  * @param options0.suppressOrigin - When true, the site action is omitted.
+ * @param options0.suppressAccount - When true, the address action is omitted
+ * (self-call: the destination is the user's own account).
  * @returns The unified footer JSX.
  */
 export const UnifiedFooter = ({
   accountProps,
   originProps,
   suppressOrigin,
+  suppressAccount,
 }: {
   accountProps: AccountProps;
   originProps: OriginProps;
   suppressOrigin: boolean;
+  suppressAccount: boolean;
 }) => {
   return (
     <Box>
       <Divider />
       <Box>
-        <AddressAction {...accountProps} />
+        {suppressAccount ? null : <AddressAction {...accountProps} />}
         {suppressOrigin ? null : <SiteAction {...originProps} />}
       </Box>
     </Box>

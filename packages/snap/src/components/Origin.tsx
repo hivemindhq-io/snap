@@ -22,9 +22,9 @@
 import { Box, Text, Section, Heading } from '@metamask/snaps-sdk/jsx';
 
 import type { SafetyData } from '../safety/types';
-import type { NetworkFamiliarity } from '../trusted-circle/types';
+import type { NetworkFamiliarity, SelfClaims } from '../trusted-circle/types';
 import { OriginType, type OriginProps } from '../types';
-import { renderNetworkInsight } from './NetworkFamiliarity';
+import { renderNetworkInsight, renderSelfClaims } from './NetworkFamiliarity';
 import { renderCriticalSafety, renderNonCriticalSafety } from './Safety';
 
 /**
@@ -60,6 +60,7 @@ const OriginHeading = ({ hostname }: { hostname: string | undefined }) => {
  * @param props.originProps - Origin props (type + hostname/atom) for the heading.
  * @param props.safety - The origin's classified safety data, or null.
  * @param props.familiarity - The origin's network familiarity, or null.
+ * @param props.selfClaims - The viewer's own claims about the origin, or undefined.
  * @returns The site block JSX, or null when there are no signals to show.
  */
 export const OriginBlock = ({
@@ -67,11 +68,13 @@ export const OriginBlock = ({
   originProps,
   safety,
   familiarity,
+  selfClaims,
 }: {
   variant: 'primary' | 'more';
   originProps: OriginProps;
   safety: SafetyData | undefined;
   familiarity: NetworkFamiliarity | undefined;
+  selfClaims?: SelfClaims | undefined;
 }) => {
   if (originProps.originType === OriginType.NoOrigin) {
     return null;
@@ -79,13 +82,18 @@ export const OriginBlock = ({
 
   if (variant === 'primary') {
     const critical = renderCriticalSafety(safety);
-    if (!critical) {
+    // The viewer's own staked claims about the site ("Your take") render inline
+    // alongside any critical danger banner, so a personal signal on a domain is
+    // surfaced on the primary insight even when nothing else is.
+    const self = renderSelfClaims(selfClaims);
+    if (!critical && !self) {
       return null;
     }
     return (
       <Section>
         <OriginHeading hostname={originProps.hostname} />
         {critical}
+        {self}
       </Section>
     );
   }
