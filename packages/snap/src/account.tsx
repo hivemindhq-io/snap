@@ -25,25 +25,115 @@ export type GetAccountDataResult = {
   alternateTrustData: AlternateTrustData;
 };
 
+/** Timeout for the contract-status API proxy call. The Snap blocks the
+ * onTransaction UI on classification, so keep this tight. */
+const CONTRACT_STATUS_API_TIMEOUT_MS = 4000;
+
+/**
+ * Multi-chain contract-status check via the Hive Mind API proxy.
+ *
+ * The proxy fans out `eth_getCode` across Ethereum / Base / Intuition (Alchemy
+ * for ETH/Base, keys stay server-side) and applies the canonical classification
+ * rule (7702 + smart-account aware). Returns:
+ *   - `true`  : real contract on at least one chain
+ *   - `false` : EOA / 7702 / smart-account on all answered chains
+ *   - `null`  : API unreachable or every chain RPC failed (caller falls back)
+ */
+const fetchContractStatusFromApi = async (
+  destinationAddress: string,
+): Promise<boolean | null> => {
+  const controller = new AbortController();
+  const timer = setTimeout(
+    () => controller.abort(),
+    CONTRACT_STATUS_API_TIMEOUT_MS,
+  );
+
+  try {
+    const url = `${chainConfig.hivemindApiUrl}/addresses/${destinationAddress}/contract-status`;
+    const response = await fetch(url, { signal: controller.signal });
+
+    if (!response.ok) {
+      console.log('[classifyAddress] contract-status API not ok', {
+        destinationAddress,
+        status: response.status,
+      });
+      return null;
+    }
+
+    const data = (await response.json()) as {
+      isContract: boolean | null;
+      contractChainId: number | null;
+    };
+
+    console.log('[classifyAddress] contract-status API response', {
+      destinationAddress,
+      isContract: data.isContract,
+      contractChainId: data.contractChainId,
+    });
+
+    return data.isContract;
+  } catch (err) {
+    console.log('[classifyAddress] contract-status API threw', {
+      destinationAddress,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+};
+
 /**
  * Classifies an address as EOA, contract, or unknown.
  * Tracks certainty level so we can handle uncertain cases appropriately.
  *
- * Uses the configured Intuition chain's RPC to check for bytecode.
- * The transaction's chain is irrelevant - we always check on our configured chain
- * because that's where trust data lives.
+ * For empty-calldata transactions we first ask the Hive Mind API's multi-chain
+ * contract-status proxy (Ethereum / Base / Intuition via Alchemy). On any API
+ * failure we fall back to a direct `eth_getCode` against the configured
+ * Intuition chain, preserving the prior single-chain behavior.
+ *
+ * The transaction's chain is irrelevant for trust lookups - we always resolve
+ * against our configured chain because that's where trust data lives.
  */
 const classifyAddress = async (
   destinationAddress: string,
   transactionData: string,
 ): Promise<AddressClassification> => {
+  console.log('[classifyAddress] input', {
+    destinationAddress,
+    transactionData,
+    hasCalldata: transactionData !== '0x',
+    getCodeRpcUrl: chainConfig.rpcUrl,
+    getCodeChainId: chainConfig.chainId,
+  });
+
   // If transaction has data, it's definitely a contract interaction
   if (transactionData !== '0x') {
+    console.log('[classifyAddress] result: contract (has calldata)', {
+      destinationAddress,
+    });
     return { type: 'contract', certainty: 'definite' };
   }
 
-  // Transaction data is empty, but could still be a contract receiving tokens
-  // Check eth_getCode on our configured Intuition chain via direct RPC call
+  // Empty calldata: prefer the multi-chain API proxy (covers ETH/Base/Intuition).
+  // A definite true/false from the API wins; null means "API couldn't decide"
+  // and we fall through to the direct Intuition RPC below.
+  const apiResult = await fetchContractStatusFromApi(destinationAddress);
+  if (apiResult === true) {
+    console.log('[classifyAddress] result: contract (multi-chain API)', {
+      destinationAddress,
+    });
+    return { type: 'contract', certainty: 'definite' };
+  }
+  if (apiResult === false) {
+    console.log('[classifyAddress] result: eoa (multi-chain API)', {
+      destinationAddress,
+    });
+    return { type: 'eoa', certainty: 'definite' };
+  }
+
+  // API unavailable/undecided — fall back to direct Intuition eth_getCode.
+  // Transaction data is empty, but could still be a contract receiving tokens.
   try {
     const response = await fetch(chainConfig.rpcUrl, {
       method: 'POST',
@@ -57,18 +147,41 @@ const classifyAddress = async (
     });
 
     if (!response.ok) {
+      console.log('[classifyAddress] result: uncertain (eth_getCode HTTP not ok)', {
+        destinationAddress,
+        status: response.status,
+        getCodeRpcUrl: chainConfig.rpcUrl,
+      });
       return { type: 'unknown', certainty: 'uncertain', reason: 'eth_getCode_failed' };
     }
 
     const data = await response.json();
     const codeResponse = data.result;
 
+    console.log('[classifyAddress] eth_getCode response', {
+      destinationAddress,
+      getCodeRpcUrl: chainConfig.rpcUrl,
+      codeResponse,
+      codeLength: typeof codeResponse === 'string' ? codeResponse.length : null,
+    });
+
     if (codeResponse === '0x' || codeResponse === null) {
+      console.log('[classifyAddress] result: eoa (no bytecode on Intuition RPC)', {
+        destinationAddress,
+      });
       return { type: 'eoa', certainty: 'definite' };
     } else {
+      console.log('[classifyAddress] result: contract (bytecode found)', {
+        destinationAddress,
+      });
       return { type: 'contract', certainty: 'definite' };
     }
   } catch (err) {
+    console.log('[classifyAddress] result: uncertain (eth_getCode threw)', {
+      destinationAddress,
+      getCodeRpcUrl: chainConfig.rpcUrl,
+      error: err instanceof Error ? err.message : String(err),
+    });
     return { type: 'unknown', certainty: 'uncertain', reason: 'eth_getCode_failed' };
   }
 };
@@ -190,6 +303,13 @@ export const getAccountData = async (
   const { to: destinationAddress, data: transactionData } = transaction;
   const caipAddress = addressToCaip10(destinationAddress, chainId);
 
+  console.log('[getAccountData] tx context', {
+    destinationAddress,
+    txChainId: chainId,
+    rawTransactionData: transactionData,
+    caipAddress,
+  });
+
   // Step 1: Classify the address with certainty tracking
   // Uses the configured Intuition chain's RPC (transaction chain is irrelevant)
   const classification = await classifyAddress(
@@ -201,6 +321,16 @@ export const getAccountData = async (
   const isContract =
     classification.type === 'contract' ||
     (classification.certainty === 'uncertain'); // Default to contract when uncertain
+
+  console.log('[getAccountData] classification result', {
+    destinationAddress,
+    txChainId: chainId,
+    classification,
+    isContract,
+    note: isContract
+      ? 'URL will use CAIP-10'
+      : 'URL will use plain 0x (EOA)',
+  });
 
   // Step 2: Query both atom formats
   try {
