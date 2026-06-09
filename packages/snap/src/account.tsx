@@ -53,10 +53,6 @@ const fetchContractStatusFromApi = async (
     const response = await fetch(url, { signal: controller.signal });
 
     if (!response.ok) {
-      console.log('[classifyAddress] contract-status API not ok', {
-        destinationAddress,
-        status: response.status,
-      });
       return null;
     }
 
@@ -65,18 +61,8 @@ const fetchContractStatusFromApi = async (
       contractChainId: number | null;
     };
 
-    console.log('[classifyAddress] contract-status API response', {
-      destinationAddress,
-      isContract: data.isContract,
-      contractChainId: data.contractChainId,
-    });
-
     return data.isContract;
-  } catch (err) {
-    console.log('[classifyAddress] contract-status API threw', {
-      destinationAddress,
-      error: err instanceof Error ? err.message : String(err),
-    });
+  } catch {
     return null;
   } finally {
     clearTimeout(timer);
@@ -99,19 +85,8 @@ const classifyAddress = async (
   destinationAddress: string,
   transactionData: string,
 ): Promise<AddressClassification> => {
-  console.log('[classifyAddress] input', {
-    destinationAddress,
-    transactionData,
-    hasCalldata: transactionData !== '0x',
-    getCodeRpcUrl: chainConfig.rpcUrl,
-    getCodeChainId: chainConfig.chainId,
-  });
-
   // If transaction has data, it's definitely a contract interaction
   if (transactionData !== '0x') {
-    console.log('[classifyAddress] result: contract (has calldata)', {
-      destinationAddress,
-    });
     return { type: 'contract', certainty: 'definite' };
   }
 
@@ -120,15 +95,9 @@ const classifyAddress = async (
   // and we fall through to the direct Intuition RPC below.
   const apiResult = await fetchContractStatusFromApi(destinationAddress);
   if (apiResult === true) {
-    console.log('[classifyAddress] result: contract (multi-chain API)', {
-      destinationAddress,
-    });
     return { type: 'contract', certainty: 'definite' };
   }
   if (apiResult === false) {
-    console.log('[classifyAddress] result: eoa (multi-chain API)', {
-      destinationAddress,
-    });
     return { type: 'eoa', certainty: 'definite' };
   }
 
@@ -147,41 +116,18 @@ const classifyAddress = async (
     });
 
     if (!response.ok) {
-      console.log('[classifyAddress] result: uncertain (eth_getCode HTTP not ok)', {
-        destinationAddress,
-        status: response.status,
-        getCodeRpcUrl: chainConfig.rpcUrl,
-      });
       return { type: 'unknown', certainty: 'uncertain', reason: 'eth_getCode_failed' };
     }
 
     const data = await response.json();
     const codeResponse = data.result;
 
-    console.log('[classifyAddress] eth_getCode response', {
-      destinationAddress,
-      getCodeRpcUrl: chainConfig.rpcUrl,
-      codeResponse,
-      codeLength: typeof codeResponse === 'string' ? codeResponse.length : null,
-    });
-
     if (codeResponse === '0x' || codeResponse === null) {
-      console.log('[classifyAddress] result: eoa (no bytecode on Intuition RPC)', {
-        destinationAddress,
-      });
       return { type: 'eoa', certainty: 'definite' };
     } else {
-      console.log('[classifyAddress] result: contract (bytecode found)', {
-        destinationAddress,
-      });
       return { type: 'contract', certainty: 'definite' };
     }
-  } catch (err) {
-    console.log('[classifyAddress] result: uncertain (eth_getCode threw)', {
-      destinationAddress,
-      getCodeRpcUrl: chainConfig.rpcUrl,
-      error: err instanceof Error ? err.message : String(err),
-    });
+  } catch {
     return { type: 'unknown', certainty: 'uncertain', reason: 'eth_getCode_failed' };
   }
 };
@@ -303,13 +249,6 @@ export const getAccountData = async (
   const { to: destinationAddress, data: transactionData } = transaction;
   const caipAddress = addressToCaip10(destinationAddress, chainId);
 
-  console.log('[getAccountData] tx context', {
-    destinationAddress,
-    txChainId: chainId,
-    rawTransactionData: transactionData,
-    caipAddress,
-  });
-
   // Step 1: Classify the address with certainty tracking
   // Uses the configured Intuition chain's RPC (transaction chain is irrelevant)
   const classification = await classifyAddress(
@@ -321,16 +260,6 @@ export const getAccountData = async (
   const isContract =
     classification.type === 'contract' ||
     (classification.certainty === 'uncertain'); // Default to contract when uncertain
-
-  console.log('[getAccountData] classification result', {
-    destinationAddress,
-    txChainId: chainId,
-    classification,
-    isContract,
-    note: isContract
-      ? 'URL will use CAIP-10'
-      : 'URL will use plain 0x (EOA)',
-  });
 
   // Step 2: Query both atom formats
   try {

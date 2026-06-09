@@ -34,20 +34,10 @@ import type {
 } from './types';
 
 /**
- * Flip to false to silence the safety read-surface debug logs.
- * Logs print to the MetaMask service-worker console (prefixed `[Safety]`).
- *
  * NOTE: this surface is intentionally negative-only + provenance. Positive
  * claims (e.g. `has tag → trustworthy`, `bullish`) are NOT in scope here — they
  * are reflected in the existing reputation / trust-signal section instead.
  */
-const SAFETY_DEBUG = true;
-
-const dbg = (...args: unknown[]): void => {
-  if (SAFETY_DEBUG) {
-    console.log('[Safety]', ...args);
-  }
-};
 
 /**
  * Hard-lane object metadata, keyed by registry object key.
@@ -186,18 +176,7 @@ export async function getSafetyData(
 
   const reportedForId = predId('reportedFor');
   const hasTagId = predId('hasTag');
-  dbg('input', {
-    subjectAtomTermId,
-    entity,
-    isContract,
-    userAddress: userAddress?.toLowerCase(),
-    whitelistSize: whitelist.publishers.length,
-    trustCircleSize: trustedCircle.length,
-    reportedForId,
-    hasTagId,
-  });
   if (!reportedForId || !hasTagId) {
-    dbg('aborting: reportedFor/hasTag predicate IDs could not be resolved');
     return undefined;
   }
 
@@ -227,13 +206,6 @@ export async function getSafetyData(
   const softObjectIds = Array.from(softIdToKey.keys());
   const provenancePredicateIds = Array.from(provPredIdToKey.keys());
 
-  dbg('resolved vocabulary', {
-    hardObjectKeys: Array.from(hardIdToKey.values()),
-    softObjectKeys: Array.from(softIdToKey.values()),
-    provenancePredicateKeys: Array.from(provPredIdToKey.values()),
-    note: 'positive labels like "trustworthy"/"bullish" are intentionally absent',
-  });
-
   let triples: SafetyTriple[] = [];
   try {
     const response = (await graphQLQuery(getSafetyClaimsAboutAtomQuery, {
@@ -249,17 +221,7 @@ export async function getSafetyData(
     return undefined;
   }
 
-  dbg(
-    `fetched ${triples.length} in-scope triple(s)`,
-    triples.map((t) => ({
-      predicate: t.predicate?.label,
-      object: t.object?.label,
-      creator: t.creator_id?.toLowerCase(),
-    })),
-  );
-
   if (triples.length === 0) {
-    dbg('nothing to classify: no safety/provenance triples on this atom');
     return undefined;
   }
 
@@ -387,17 +349,6 @@ export async function getSafetyData(
         hardKey,
         extendedIndex,
       );
-      dbg('hard report decision', {
-        object: objectLabel,
-        authorAddresses: Array.from(authorAddresses),
-        excludedSelf: normalizedUser,
-        fromWhitelist: authors.fromWhitelist,
-        fromTrustCircle: authors.fromTrustCircle,
-        verdict:
-          !authors.fromWhitelist && !authors.fromTrustCircle
-            ? 'SUPPRESSED (no whitelist/trust author)'
-            : 'KEPT',
-      });
       // Anonymous hard reports (author not in whitelist or trust circle) are
       // suppressed at sign-time. A degree-2 (extended-network) author NEVER
       // un-suppresses a hard report — a FoaF is not an authority — so it is
@@ -449,19 +400,6 @@ export async function getSafetyData(
         undefined,
         extendedIndex,
       );
-      dbg('soft tag decision', {
-        object: objectLabel,
-        authorAddresses: Array.from(authorAddresses),
-        excludedSelf: normalizedUser,
-        fromWhitelist: authors.fromWhitelist,
-        fromTrustCircle: authors.fromTrustCircle,
-        fromExtendedNetwork: authors.fromExtendedNetwork,
-        note: 'soft lane is gated by trust circle OR (extended network with ≥ MIN_BRIDGES bridges)',
-        verdict:
-          authors.fromTrustCircle || authors.fromExtendedNetwork
-            ? 'KEPT'
-            : 'SUPPRESSED (author not in your trust circle or extended network)',
-      });
       // The soft lane is gated. 1-hop: an author in the trust circle. 2-hop: an
       // extended-network author with ≥ MIN_BRIDGES distinct bridges (computed in
       // buildAuthors). Both gates flip on together.
@@ -484,20 +422,11 @@ export async function getSafetyData(
     }
   }
 
-  dbg('classified', {
-    critical: critical.length,
-    warnings: warnings.length,
-    provenance: provenance.length,
-  });
-
   if (
     critical.length === 0 &&
     warnings.length === 0 &&
     provenance.length === 0
   ) {
-    dbg(
-      'all in-scope triples were suppressed (anonymous: not from whitelist or trust circle)',
-    );
     return undefined;
   }
 

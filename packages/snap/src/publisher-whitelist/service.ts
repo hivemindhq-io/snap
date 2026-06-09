@@ -33,16 +33,11 @@ const EMPTY: PublisherWhitelistRegistry = {
 export async function getPublisherWhitelist(): Promise<PublisherWhitelistRegistry> {
   const cached = await getPublisherWhitelistCache();
   if (cached) {
-    console.log('[Whitelist] cache hit', {
-      version: cached.version,
-      publishers: cached.publishers.map((p) => p.address),
-    });
     return cached;
   }
 
   const url = `${chainConfig.hivemindApiUrl}/atoms/publisher-whitelist`;
   try {
-    console.log('[Whitelist] cache miss, fetching', url);
     const response = await fetch(url);
 
     if (!response.ok) {
@@ -61,10 +56,6 @@ export async function getPublisherWhitelist(): Promise<PublisherWhitelistRegistr
         address: p.address.toLowerCase(),
       })),
     };
-    console.log('[Whitelist] fetched OK', {
-      version: normalized.version,
-      publishers: normalized.publishers.map((p) => p.address),
-    });
     await setPublisherWhitelistCache(normalized);
     return normalized;
   } catch (error) {
