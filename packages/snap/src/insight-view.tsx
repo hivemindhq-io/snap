@@ -18,7 +18,7 @@
  */
 
 import type { InterfaceContext } from '@metamask/snaps-sdk';
-import { Box, Button } from '@metamask/snaps-sdk/jsx';
+import { Box, Button, Text } from '@metamask/snaps-sdk/jsx';
 
 import {
   UnifiedFooter,
@@ -32,10 +32,14 @@ import {
   renderOneHopFamiliarity,
   renderExtendedFamiliarity,
   renderSelfClaims,
+  renderPublicClaims,
 } from './components';
+import type { PublicClaims } from './public-claims/types';
 import type { SafetyData } from './safety/types';
 import type { NetworkFamiliarity, SelfClaims } from './trusted-circle/types';
+import { AccountType, OriginType } from './types';
 import type { AccountProps, OriginProps } from './types';
+import { vendor } from './vendors';
 
 /** Button names that drive navigation between the primary and More info pages. */
 export const MORE_INFO_BUTTON = 'more-info';
@@ -60,6 +64,13 @@ export type InsightModel = {
   originFamiliarity: NetworkFamiliarity | null;
   /** dApp origin: the viewer's OWN staked claims ("Your take"), or null. */
   originSelfClaims: SelfClaims | null;
+  /**
+   * Destination address: the stake-weighted "Public claims" escape-hatch lane
+   * (ANY claim, unfiltered by the viewer's network), or null. More-info-only.
+   */
+  publicClaims: PublicClaims | null;
+  /** dApp origin: the stake-weighted "Public claims" lane, or null. */
+  originPublicClaims: PublicClaims | null;
   /** Account props used by the footer CTAs. */
   accountProps: AccountProps;
   /** Origin props used by the origin block + footer. */
@@ -155,6 +166,83 @@ export function hasMoreInfo(model: InsightModel): boolean {
 }
 
 /**
+ * Whether the model carries any renderable public claims (the escape-hatch
+ * lane), respecting the per-subject suppress flags. Public claims are
+ * more-info-only and never promoted inline, so they are tracked separately from
+ * {@link hasMoreInfo} (which gates the network/safety "more" content).
+ *
+ * @param model - The insight model.
+ * @returns True when there is at least one public claim to show.
+ */
+export function hasPublicClaims(model: InsightModel): boolean {
+  const addressPublic =
+    !model.suppressAccount && (model.publicClaims?.claims.length ?? 0) > 0;
+  const originPublic =
+    !model.suppressOrigin && (model.originPublicClaims?.claims.length ?? 0) > 0;
+  return addressPublic || originPublic;
+}
+
+/**
+ * Total number of public claims across the (non-suppressed) destination address
+ * and dApp origin lanes — the count surfaced in the muted "{n} public claims"
+ * line that motivates the escape-hatch "More info" button.
+ *
+ * @param model - The insight model.
+ * @returns The combined shown public-claim count.
+ */
+function publicClaimsCount(model: InsightModel): number {
+  const addressCount = model.suppressAccount
+    ? 0
+    : model.publicClaims?.claims.length ?? 0;
+  const originCount = model.suppressOrigin
+    ? 0
+    : model.originPublicClaims?.claims.length ?? 0;
+  return addressCount + originCount;
+}
+
+/**
+ * The destination-address "View all on Hive Mind" URL for the public-claims
+ * lane, or undefined when no atom is present (the vendor URL builders require an
+ * atom). Guarded so a subject with claims-by-id-only never throws.
+ *
+ * @param model - The insight model.
+ * @returns The address atom view URL, or undefined.
+ */
+function addressViewHref(model: InsightModel): string | undefined {
+  const { accountProps } = model;
+  if (
+    accountProps.accountType === AccountType.NoAtom ||
+    !accountProps.account
+  ) {
+    return undefined;
+  }
+  try {
+    return vendor.viewAtom(accountProps).url;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * The dApp-origin "View all on Hive Mind" URL for the public-claims lane, or
+ * undefined when no origin atom is present.
+ *
+ * @param model - The insight model.
+ * @returns The origin atom view URL, or undefined.
+ */
+function originViewHref(model: InsightModel): string | undefined {
+  const { originProps } = model;
+  if (originProps.originType !== OriginType.HasAtom) {
+    return undefined;
+  }
+  try {
+    return vendor.viewOriginAtom(originProps).url;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
  * Whether the primary (inline) tier has any renderable content: a 1st-degree
  * destination-address safety flag/provenance, the 1-hop "People you follow"
  * familiarity block, or an inline dApp critical danger banner. When this is
@@ -212,11 +300,18 @@ export function isEmptyInsight(model: InsightModel): boolean {
  * more-info content is promoted inline instead (no button, no second page); when
  * there is no more-info content there is nothing to expand.
  *
+ * Public claims are more-info-only and ALSO gate the button: when the primary
+ * tier is empty (cold start) but public claims exist, the button is the
+ * escape-hatch into the "Public claims" lane. When the primary tier has content,
+ * the button shows if there is network/safety "more" content OR public claims.
+ *
  * @param model - The insight model.
  * @returns True when a "More info" button (and interactive interface) is needed.
  */
 export function showsMoreInfoButton(model: InsightModel): boolean {
-  return hasPrimaryContent(model) && hasMoreInfo(model);
+  return hasPrimaryContent(model)
+    ? hasMoreInfo(model) || hasPublicClaims(model)
+    : hasPublicClaims(model);
 }
 
 /**
@@ -287,9 +382,30 @@ export function buildPrimaryInsight(model: InsightModel) {
     />
   );
 
+  // Escape-hatch affordance shared by the empty + promote branches: a muted
+  // "{n} public claims" line plus the "More info" button, shown only when there
+  // are public claims behind the click. Branch 3 emits its own button, so this
+  // is only used where the primary tier is bare.
+  const publicCount = publicClaimsCount(model);
+  const escapeHatch =
+    !hasPrimaryContent(model) && showsMoreInfoButton(model) ? (
+      <Box>
+        {publicCount > 0 ? (
+          <Text color="muted">
+            {publicCount === 1
+              ? '1 public claim from outside your network'
+              : `${publicCount} public claims from outside your network`}
+          </Text>
+        ) : null}
+        <Button name={MORE_INFO_BUTTON}>More info</Button>
+      </Box>
+    ) : null;
+
   // Branch 1 — Empty: honest "nothing here yet" notice. Still surfaces the
   // destination's account type (contract vs wallet) when known and the
   // destination isn't suppressed (self-calls have no meaningful destination).
+  // When public claims exist, the escape-hatch button opens the "Public claims"
+  // lane on the More info page.
   if (isEmptyInsight(model)) {
     return (
       <Box>
@@ -299,8 +415,10 @@ export function buildPrimaryInsight(model: InsightModel) {
               ? undefined
               : model.accountProps.classification
           }
+          hasPublicClaims={hasPublicClaims(model)}
         />
         {provenance}
+        {escapeHatch}
         {footer}
       </Box>
     );
@@ -330,6 +448,7 @@ export function buildPrimaryInsight(model: InsightModel) {
         {addressCard}
         {dappCard}
         {provenance}
+        {escapeHatch}
         {footer}
       </Box>
     );
@@ -386,30 +505,67 @@ export function buildMoreInfoInsight(model: InsightModel) {
   const originSafety = model.originSafety ?? undefined;
   const originFamiliarity = model.originFamiliarity ?? undefined;
 
+  // The network/safety "more" cards belong here ONLY when the primary tier had
+  // content. When the primary tier was bare, Branch 2 already PROMOTED the 'more'
+  // cards inline, so re-rendering them here would double-render. The public
+  // claims lane is unaffected — it is never promoted inline, so it always renders
+  // on this page.
+  const showNetworkMore = hasPrimaryContent(model);
+
   // Same subject grouping as the primary view. The "More info" page never
   // carries critical reports (those float up to the primary view), so ordering
   // falls back to the address-first default.
-  const addressCard = model.suppressAccount ? null : (
-    <AddressBlock
-      variant="more"
-      accountProps={model.accountProps}
-      safety={safety}
-      familiarity={familiarity}
-    />
-  );
-  const dappCard = model.suppressOrigin ? null : (
-    <OriginBlock
-      variant="more"
-      originProps={model.originProps}
-      safety={originSafety}
-      familiarity={originFamiliarity}
-    />
-  );
+  const addressCard =
+    showNetworkMore && !model.suppressAccount ? (
+      <AddressBlock
+        variant="more"
+        accountProps={model.accountProps}
+        safety={safety}
+        familiarity={familiarity}
+      />
+    ) : null;
+  const dappCard =
+    showNetworkMore && !model.suppressOrigin ? (
+      <OriginBlock
+        variant="more"
+        originProps={model.originProps}
+        safety={originSafety}
+        familiarity={originFamiliarity}
+      />
+    ) : null;
+
+  // The "Public claims" escape-hatch lane: ANY claim about the subject,
+  // unfiltered by the viewer's network. Always rendered here (more-info-only),
+  // for the destination address and the dApp origin, each guarded by its
+  // suppress flag and its atom-presence-gated "View all" href. Each block is
+  // subject-scoped in its heading ("This address" / "This site") so the two are
+  // distinguishable; the shared "unverified" subtitle renders only on the FIRST
+  // visible block to avoid stacking the same caveat twice.
+  const addressHasPublic =
+    !model.suppressAccount && (model.publicClaims?.claims.length ?? 0) > 0;
+  const addressPublic = model.suppressAccount
+    ? null
+    : renderPublicClaims(model.publicClaims, {
+        subject: 'address',
+        viewHref: addressViewHref(model),
+        showSubtitle: true,
+      });
+  const originPublic = model.suppressOrigin
+    ? null
+    : renderPublicClaims(model.originPublicClaims, {
+        subject: 'site',
+        viewHref: originViewHref(model),
+        // Subtitle goes on the first visible block: the site block owns it only
+        // when the address block isn't showing public claims above it.
+        showSubtitle: !addressHasPublic,
+      });
 
   return (
     <Box>
       {addressCard}
       {dappCard}
+      {addressPublic}
+      {originPublic}
       <Button name={BACK_BUTTON}>Back</Button>
     </Box>
   );

@@ -126,13 +126,6 @@ async function fetchTrustedCircleFromAPI(
 
   const positions = response?.data?.positions || [];
 
-  console.log('[TrustCircle] fetched follow positions', {
-    userAddress: userAddress.toLowerCase(),
-    iAtomId,
-    followAtomId,
-    positionCount: positions.length,
-  });
-
   // Extract unique contacts (user might have multiple positions on same triple)
   // IMPORTANT: Use the wallet address for matching against positions.
   // The followed account is the triple's OBJECT atom.
@@ -169,11 +162,6 @@ async function fetchTrustedCircleFromAPI(
   }
 
   const contacts = Array.from(contactMap.values());
-
-  console.log('[TrustCircle] resolved followed accounts', {
-    count: contacts.length,
-    accounts: contacts.map((c) => `${c.label} (${c.accountId.toLowerCase()})`),
-  });
 
   return contacts;
 }
@@ -279,12 +267,6 @@ async function fetchExtendedNetworkFromAPI(
 
   const positions = response?.data?.positions || [];
 
-  console.log('[ExtendedNetwork] fetched 2-hop follow positions', {
-    viewer,
-    seedCount: seeds.length,
-    positionCount: positions.length,
-  });
-
   // Group rows by FoaF; accumulate distinct bridges in `via`. Every address is
   // canonicalized to its checksummed form, so comparisons and stored values stay
   // canonical (no lowercasing).
@@ -341,13 +323,6 @@ async function fetchExtendedNetworkFromAPI(
       return b.via.length - a.via.length;
     }
     return a.label.localeCompare(b.label);
-  });
-
-  console.log('[ExtendedNetwork] resolved FoaF contacts', {
-    count: contacts.length,
-    topBridges: contacts
-      .slice(0, 5)
-      .map((c) => `${c.label} (${c.via.length} bridges)`),
   });
 
   return contacts;
@@ -728,15 +703,6 @@ export async function getNetworkFamiliarity(
         resolveFamiliarityTier(whitelist, t.predicate_id, t.object_id) !== null,
     );
 
-    console.log('[NetworkFamiliarity] predicate registry', {
-      subjectAtomId,
-      hasRegistry: Boolean(registry),
-      predicateKeyCount: predIdToKey.size,
-      whitelistPairs: whitelist.pairs.size,
-      whitelistWildcards: whitelist.wildcards.size,
-      anyWhitelisted,
-    });
-
     // Collect claims per trusted contact, skipping already-displayed and the user.
     const contactClaimsMap = new Map<
       string,
@@ -799,19 +765,11 @@ export async function getNetworkFamiliarity(
       const objectLabel = triple.object?.label || 'unknown';
       const predicateKey = predIdToKey.get(triple.predicate_id);
 
-      console.log('[NetworkFamiliarity] claim predicate resolution', {
-        predicateId: triple.predicate_id,
-        predicateLabel,
-        objectLabel,
-        resolvedKey: predicateKey ?? null,
-        tier,
-        viaEscapeHatch: matchedTier === null,
-      });
-
       const claim: ClaimContext = {
         predicateLabel,
         objectLabel,
         tier,
+        termId: triple.term_id,
         ...(predicateKey ? { predicateKey } : {}),
       };
 
@@ -1031,6 +989,7 @@ export async function getSelfClaims(
         // The viewer's own claims are always inline-eligible (primary tier).
         tier: 'primary',
         stance,
+        termId: triple.term_id,
         ...(predicateKey ? { predicateKey } : {}),
       });
     }
@@ -1038,14 +997,6 @@ export async function getSelfClaims(
     if (claims.length === 0) {
       return undefined;
     }
-
-    console.log('[SelfClaims] resolved viewer claims', {
-      subjectAtomId,
-      count: claims.length,
-      stances: claims.map(
-        (c) => `${c.predicateLabel} ${c.objectLabel} (${c.stance})`,
-      ),
-    });
 
     return { claims };
   } catch (error) {

@@ -53,14 +53,23 @@ const accountTypeLabel = (
  * shown so the user still learns whether they are interacting with a smart
  * contract or a regular wallet even with zero community signals.
  *
+ * When `hasPublicClaims` is true the broader community HAS staked claims about
+ * this subject — the viewer's network just hasn't weighed in — so the headline
+ * sentence is corrected from the misleading "no community signals" to
+ * "no one in your network has weighed in", which the escape-hatch "More info"
+ * button (rendered by the caller) then opens into the Public claims lane.
+ *
  * @param props - Props.
  * @param props.classification - The destination's address classification, if known.
+ * @param props.hasPublicClaims - Whether public (out-of-network) claims exist.
  * @returns The empty-state notice JSX.
  */
 export const EmptyStateNotice = ({
   classification,
+  hasPublicClaims = false,
 }: {
   classification?: AddressClassification | undefined;
+  hasPublicClaims?: boolean;
 }) => {
   const typeLabel = accountTypeLabel(classification);
   return (
@@ -71,7 +80,11 @@ export const EmptyStateNotice = ({
           <Text color="muted">{typeLabel}</Text>
         </Row>
       ) : null}
-      <Text>No community signals on this address yet — not an endorsement.</Text>
+      <Text>
+        {hasPublicClaims
+          ? 'No one in your network has weighed in yet — not an endorsement.'
+          : 'No community signals on this address yet — not an endorsement.'}
+      </Text>
       <Text>
         Spotted a scam — or know it&apos;s safe? Add the first claim to warn
         others.

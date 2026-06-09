@@ -3,5 +3,6 @@ export * from './EmptyState';
 export * from './Footer';
 export * from './NetworkFamiliarity';
 export * from './Origin';
+export * from './PublicClaims';
 export * from './Safety';
 export * from './UnifiedFooter';

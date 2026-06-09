@@ -102,6 +102,36 @@ export const MAX_SEED_FOLLOWS = 200;
 export const MIN_BRIDGES = 2;
 
 /**
+ * Public-claims (escape-hatch) lane feature gate + knobs.
+ *
+ * The public-claims lane surfaces ANY stake-weighted claim about a subject
+ * (address or domain), UNFILTERED by the viewer's network, shown only behind the
+ * "More info" click. It exists so the cold-start empty state stops reading as
+ * "nothing here" when the broader community HAS staked claims the viewer just
+ * isn't connected to. See docs/public-claims-spec (the Public claims plan).
+ */
+
+/** Master switch for the public-claims lane. Flip to `false` to disable it. */
+export const PUBLIC_CLAIMS_ENABLED = true;
+
+/**
+ * A public claim is "disputed" when its AGAINST stake is at least this percent
+ * of its FOR stake. BigInt-safe (`againstWei * 100n >= forWei * RATIO`), no
+ * absolute floor (deferred). `against > for` is naturally covered.
+ */
+export const PUBLIC_CLAIM_DISPUTE_RATIO_PERCENT = 20;
+
+/** Max public claims rendered in the lane after cross-lane exclusion + sort. */
+export const PUBLIC_CLAIMS_TOP_N = 3;
+
+/**
+ * Payload cap on the public-claims query: how many of the highest-staked triples
+ * about the subject to fetch before client-side exclusion/sort/topN. Larger than
+ * TOP_N so excluded (already-seen) claims don't starve the lane.
+ */
+export const PUBLIC_CLAIMS_FETCH_LIMIT = 15;
+
+/**
  * Offline-fallback safety vocabulary term IDs for the read surface.
  *
  * These mirror `hivemind-api/config/claim-templates.json` and are the offline

@@ -68,6 +68,14 @@ export interface ClaimContext {
   /** Resolved first-class registry key (e.g. 'hasTag'); absent if not first-class. */
   predicateKey?: string;
   /**
+   * The underlying triple's term_id. Used as the cross-lane dedup key so a claim
+   * already shown in the familiarity / self lanes can be excluded from the
+   * public-claims escape-hatch lane (one home per claim). Absent on older
+   * payloads ⇒ the claim simply doesn't contribute to the public-claims exclude
+   * set.
+   */
+  termId?: string;
+  /**
    * Placement tier resolved from the familiarity vocabulary whitelist.
    *   - `'primary'`   → eligible to render inline (1-hop) and in More info (2-hop).
    *   - `'secondary'` → always demoted to More info, even from a direct follow.

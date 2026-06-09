@@ -1,6 +1,28 @@
 import { chainConfig } from './config';
 
 /**
+ * TODO (address matching consistency): several queries use `_ilike` for address
+ * EQUALITY instead of `_eq` / `_in` on EIP-55 checksummed addresses. This
+ * contradicts the documented house standard (docs/patterns/GRAPHQL-PATTERNS.md)
+ * and is inconsistent with the `_in` queries here (getExtendedNetworkQuery,
+ * getAtomsForAddressesQuery). It is functionally fine for hex addresses but
+ * slower (case-insensitive match can't use a plain index) and slightly
+ * off-standard. `_ilike` should be reserved for fuzzy text/label search only.
+ *
+ * Affected:
+ *  - getAddressAtomsQuery (label/data match on $plainAddress / $caipAddress)
+ *  - getTripleWithPositionsDataQuery (user_position / user_counter_position
+ *    filters on account_id)
+ *  - getUserTrustedCircleQuery (positions account_id filter)
+ *  - getSelfClaimsAboutAtomQuery (positions / counter_positions account_id
+ *    filters, incl. the user_position / user_counter_position sub-selects)
+ *
+ * Fix: checksum the address(es) caller-side (viem `getAddress()`) and switch to
+ * `_eq` (single) / `_in` (list), matching the canonical checksummed form the
+ * indexer stores.
+ */
+
+/**
  * Executes a GraphQL query against the Intuition API.
  * Uses native fetch for Snap compatibility (Snaps run in a hardened SES environment
  * where axios may not work correctly).
@@ -558,6 +580,88 @@ query SafetyClaimsAboutAtom(
         id
         label
       }
+    }
+  }
+}
+`;
+
+/**
+ * Query for the PUBLIC-CLAIMS (escape-hatch) lane.
+ *
+ * Returns the highest-staked triples about a subject atom — UNFILTERED by the
+ * viewer's network — so the lane can surface what the broader community has said
+ * even when nobody the viewer follows has weighed in. Mirrors the per-side data
+ * proven by `getTripleWithPositionsDataQuery`: each triple's FOR vaults
+ * (`term { vaults }`) and AGAINST vaults (`counter_term { vaults }`) for
+ * `sumMarketCap()`, plus distinct-staker counts via
+ * `positions_aggregate { aggregate { count(columns: account_id, distinct: true) } }`
+ * (summing `position_count` across curves would double-count multi-curve stakers).
+ *
+ * Ordered by `triple_term.total_market_cap desc_nulls_last` and capped at
+ * `$limit` (PUBLIC_CLAIMS_FETCH_LIMIT). A separate `triples_aggregate` returns
+ * the TRUE total count of claims about the subject for the "View all N" line.
+ *
+ * Works for any subject atom term_id, so address and domain are the same query.
+ *
+ * Variables:
+ *  - subjectId: term_id of the subject atom (address or origin)
+ *  - limit: payload cap (PUBLIC_CLAIMS_FETCH_LIMIT)
+ */
+export const getPublicClaimsAboutAtomQuery = `
+query PublicClaimsAboutAtom($subjectId: String!, $limit: Int!) {
+  triples(
+    where: {
+      subject_id: { _eq: $subjectId }
+    },
+    order_by: { triple_term: { total_market_cap: desc_nulls_last } },
+    limit: $limit
+  ) {
+    term_id
+    predicate_id
+    object_id
+
+    predicate {
+      label
+    }
+    object {
+      label
+    }
+
+    # FOR vault market data — all curves; aggregate via sumMarketCap.
+    term {
+      vaults {
+        market_cap
+        curve_id
+      }
+    }
+
+    # AGAINST vault market data — all curves; aggregate via sumMarketCap.
+    counter_term {
+      vaults {
+        market_cap
+        curve_id
+      }
+    }
+
+    # Distinct FOR stakers (unique accounts, not per-curve positions).
+    positions_aggregate {
+      aggregate {
+        count(columns: account_id, distinct: true)
+      }
+    }
+
+    # Distinct AGAINST stakers (unique accounts, not per-curve positions).
+    counter_positions_aggregate {
+      aggregate {
+        count(columns: account_id, distinct: true)
+      }
+    }
+  }
+
+  # True total claim count about the subject (for the "View all N" line).
+  triples_aggregate(where: { subject_id: { _eq: $subjectId } }) {
+    aggregate {
+      count
     }
   }
 }

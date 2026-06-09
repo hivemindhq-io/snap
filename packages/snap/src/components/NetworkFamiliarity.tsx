@@ -62,7 +62,7 @@ function contactsByTier(
  * @param claim - The claim to phrase.
  * @returns A display phrase for the claim.
  */
-function phraseClaim(claim: ClaimContext): string {
+export function phraseClaim(claim: ClaimContext): string {
   const obj = claim.objectLabel;
   switch (claim.predicateKey) {
     case 'hasTag':

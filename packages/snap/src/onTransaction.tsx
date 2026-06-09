@@ -6,7 +6,11 @@ import type {
 
 import { getAccountData, getAccountType } from './account';
 import { getClaimTemplates } from './claim-templates';
-import { EXTENDED_NETWORK_ENABLED } from './config';
+import {
+  EXTENDED_NETWORK_ENABLED,
+  PUBLIC_CLAIMS_ENABLED,
+  PUBLIC_CLAIMS_TOP_N,
+} from './config';
 import {
   showsMoreInfoButton,
   buildPrimaryInsight,
@@ -15,6 +19,8 @@ import {
 } from './insight-view';
 import type { InsightModel } from './insight-view';
 import { getOriginData, getOriginType } from './origin';
+import { getPublicClaims, finalizePublicClaims } from './public-claims';
+import type { PublicClaims } from './public-claims';
 import { getPublisherWhitelist } from './publisher-whitelist';
 import { getSafetyData } from './safety';
 import type { SafetyData } from './safety';
@@ -28,6 +34,56 @@ import {
 import type { NetworkFamiliarity, SelfClaims } from './trusted-circle';
 import type { AccountProps, OriginProps } from './types';
 import { isSelfCall, shouldSuppressOrigin } from './util';
+
+/**
+ * Adds every familiarity-claim term_id (1-hop familiar contacts + 2-hop extended
+ * contacts) into the cross-lane exclude set, so a claim already shown in the
+ * network-familiarity lane is not re-shown by the public-claims escape hatch.
+ *
+ * @param familiarity - The subject's network familiarity, or undefined.
+ * @param into - The exclude set to populate (mutated in place).
+ */
+function collectClaimTermIds(
+  familiarity: NetworkFamiliarity | undefined,
+  into: Set<string>,
+): void {
+  if (!familiarity) {
+    return;
+  }
+  const contacts = [
+    ...familiarity.familiarContacts,
+    ...(familiarity.extendedContacts ?? []),
+  ];
+  for (const contact of contacts) {
+    for (const claim of contact.claims) {
+      if (claim.termId) {
+        into.add(claim.termId);
+      }
+    }
+  }
+}
+
+/**
+ * Adds every self-claim term_id (the viewer's own staked claims) into the
+ * cross-lane exclude set, so a claim already shown in the "Your take" lane is
+ * not re-shown by the public-claims escape hatch.
+ *
+ * @param selfClaims - The viewer's own claims about the subject, or undefined.
+ * @param into - The exclude set to populate (mutated in place).
+ */
+function collectSelfTermIds(
+  selfClaims: SelfClaims | undefined,
+  into: Set<string>,
+): void {
+  if (!selfClaims) {
+    return;
+  }
+  for (const claim of selfClaims.claims) {
+    if (claim.termId) {
+      into.add(claim.termId);
+    }
+  }
+}
 
 export const onTransaction: OnTransactionHandler = async ({
   transaction,
@@ -47,15 +103,6 @@ export const onTransaction: OnTransactionHandler = async ({
   // address is semantically meaningless, so the destination surface is
   // suppressed entirely (mirrors `suppressOrigin`).
   const suppressAccount = isSelfCall(transaction.to, userAddress);
-  if (suppressAccount) {
-    console.log(
-      '[onTransaction] self-call detected; suppressing address surface',
-      {
-        to: transaction.to,
-        from: userAddress,
-      },
-    );
-  }
 
   const [
     accountData,
@@ -74,14 +121,6 @@ export const onTransaction: OnTransactionHandler = async ({
     // globally. Falls back to an empty whitelist internally.
     getPublisherWhitelist(),
   ]);
-
-  console.log('[onTransaction] claim templates loaded', {
-    hasClaimTemplates: Boolean(claimTemplates),
-    version: claimTemplates?.version,
-    predicateKeys: claimTemplates
-      ? Object.keys(claimTemplates.predicates)
-      : [],
-  });
 
   const accountType = getAccountType(accountData);
   const originType = getOriginType(originData, transactionOrigin);
@@ -164,6 +203,21 @@ export const onTransaction: OnTransactionHandler = async ({
     originData.hostname,
   );
 
+  // Public-claims (escape-hatch) lane: fire BOTH fetches now, in parallel, so
+  // their round-trips overlap the safety / familiarity / self queries above and
+  // below. The fetch is dependency-free (no cross-lane exclusion) — the dedup +
+  // sort + top-N happens after every lane resolves via finalizePublicClaims.
+  // Gated by PUBLIC_CLAIMS_ENABLED + atom presence + the per-subject suppress
+  // flag. `undefined` promises resolve to `undefined` (no lane).
+  const accountPublicPromise: Promise<PublicClaims | undefined> =
+    PUBLIC_CLAIMS_ENABLED && accountData.account && !suppressAccount
+      ? getPublicClaims(accountData.account.term_id, claimTemplates)
+      : Promise.resolve(undefined);
+  const originPublicPromise: Promise<PublicClaims | undefined> =
+    PUBLIC_CLAIMS_ENABLED && originData.origin && !suppressOrigin
+      ? getPublicClaims(originData.origin.term_id, claimTemplates)
+      : Promise.resolve(undefined);
+
   // Origin (dApp) safety read surface — same pipeline as the destination
   // address, scoped to the URL/site claim vocabulary (entity 'site'). Hard
   // reports (phishing / drainer / scam) are critical-worthy; the soft tag
@@ -223,6 +277,34 @@ export const onTransaction: OnTransactionHandler = async ({
     );
   }
 
+  // Resolve the public-claims fetches now that the other lanes are done. Build
+  // each subject's cross-lane exclude set — "claims you haven't seen" = every
+  // term_id already surfaced by the safety, familiarity (1-hop + 2-hop), and self
+  // lanes for that subject — then finalize (exclude + sort by stake + top-N).
+  const [accountPublicRaw, originPublicRaw] = await Promise.all([
+    accountPublicPromise,
+    originPublicPromise,
+  ]);
+
+  const accountExclude = new Set<string>(safetyTermIds);
+  collectClaimTermIds(accountNetworkFamiliarity, accountExclude);
+  collectSelfTermIds(accountSelfClaims, accountExclude);
+
+  const originExclude = new Set<string>(originSafetyTermIds);
+  collectClaimTermIds(originNetworkFamiliarity, originExclude);
+  collectSelfTermIds(originSelfClaims, originExclude);
+
+  const accountPublicClaims = finalizePublicClaims(
+    accountPublicRaw,
+    accountExclude,
+    PUBLIC_CLAIMS_TOP_N,
+  );
+  const originPublicClaims = finalizePublicClaims(
+    originPublicRaw,
+    originExclude,
+    PUBLIC_CLAIMS_TOP_N,
+  );
+
   // Create properly typed props based on account type
   const accountProps: AccountProps = {
     ...accountData,
@@ -263,6 +345,8 @@ export const onTransaction: OnTransactionHandler = async ({
     originSafety: originSafety ?? null,
     originFamiliarity: originNetworkFamiliarity ?? null,
     originSelfClaims: originSelfClaims ?? null,
+    publicClaims: accountPublicClaims,
+    originPublicClaims,
     accountProps: footerAccountProps as AccountProps,
     originProps,
     suppressOrigin,
