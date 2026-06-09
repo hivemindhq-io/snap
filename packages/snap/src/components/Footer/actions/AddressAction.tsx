@@ -48,5 +48,5 @@ export const AddressAction = (props: AccountProps) => {
   }
 
   const { url } = vendor.viewAtom(props);
-  return <FooterLink href={url} label="See what others say about this address" />;
+  return <FooterLink href={url} label="Address reputation" />;
 };

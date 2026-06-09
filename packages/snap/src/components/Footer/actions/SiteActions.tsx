@@ -28,7 +28,7 @@ export const SiteAction = (props: OriginProps) => {
 
   if (props.originType === OriginType.HasAtom) {
     const { url } = vendor.viewOriginAtom(props);
-    return <FooterLink href={url} label="See what others say about this site" />;
+    return <FooterLink href={url} label="Site reputation" />;
   }
 
   return null;
