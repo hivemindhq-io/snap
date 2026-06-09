@@ -213,7 +213,7 @@ export const canonicalizeWebUrl = (
  */
 export const stringToDecimal = (value: string, decimals: number): number => {
   const num = BigInt(value);
-  const divisor = BigInt(10 ** decimals);
+  const divisor = 10n ** BigInt(decimals);
   const quotient = num / divisor;
   const remainder = num % divisor;
 
