@@ -55,7 +55,7 @@ export const INTUITION_MAINNET = {
   followAtomId:
     '0xffd07650dc7ab341184362461ebf52144bf8bcac5a19ef714571de15f1319260',
   iAtomId: '0x7ab197b346d386cd5926dbfeeb85dade42f113c7ed99ff2046a5123bb5cd016b',
-  hivemindApiUrl: 'http://localhost:3333', // 'https://api.hivemindhq.io',
+  hivemindApiUrl: 'https://api.hivemindhq.io', // http://localhost:3333'
 };
 
 export const CHAIN_CONFIGS = [INTUITION_TESTNET, INTUITION_MAINNET];

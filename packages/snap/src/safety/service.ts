@@ -342,12 +342,16 @@ export async function getSafetyData(
         undefined,
         extendedIndex,
       );
-      // DEV-GATE-DISABLED (revert before prod): provenance signals are normally
-      // suppressed unless an author is in the publisher whitelist, the user's
-      // trust circle, or (degree-2 enrichment) the extended network. Disabled
-      // during development so all provenance rows render.
-      // Re-enable by uncommenting the line below.
-      // if (!authors.fromWhitelist && !authors.fromTrustCircle && !authors.fromExtendedNetwork) continue;
+      // Provenance signals are suppressed unless an author is in the publisher
+      // whitelist, the user's trust circle, or (degree-2 enrichment) the
+      // extended network.
+      if (
+        !authors.fromWhitelist &&
+        !authors.fromTrustCircle &&
+        !authors.fromExtendedNetwork
+      ) {
+        continue;
+      }
       provenance.push({
         termId: triple.term_id,
         lane: 'provenance',
@@ -394,20 +398,17 @@ export async function getSafetyData(
             ? 'SUPPRESSED (no whitelist/trust author)'
             : 'KEPT',
       });
-      // DEV-GATE-DISABLED (revert before prod): anonymous hard reports (author
-      // not in whitelist or trust circle) are normally suppressed at sign-time.
-      // A degree-2 (extended-network) author NEVER un-suppresses a hard report —
-      // a FoaF is not an authority — so it is intentionally excluded from this
-      // gate. Disabled during development so every hard report surfaces.
-      // Re-enable by uncommenting the line below.
-      // if (!authors.fromWhitelist && !authors.fromTrustCircle) continue;
+      // Anonymous hard reports (author not in whitelist or trust circle) are
+      // suppressed at sign-time. A degree-2 (extended-network) author NEVER
+      // un-suppresses a hard report — a FoaF is not an authority — so it is
+      // intentionally excluded from this gate.
+      if (!authors.fromWhitelist && !authors.fromTrustCircle) {
+        continue;
+      }
 
-      // DEV-GATE-DISABLED (revert before prod): a report is normally "critical"
-      // (danger banner) only when it comes from a whitelisted authority. Degree-2
-      // authors NEVER make a report critical. Forcing meta.critical so the
-      // critical banner UI is visible without a whitelist.
-      // Original: const isCritical = meta.critical && authors.fromWhitelist;
-      const isCritical = meta.critical;
+      // A report is "critical" (danger banner) only when it comes from a
+      // whitelisted authority. Degree-2 authors NEVER make a report critical.
+      const isCritical = meta.critical && authors.fromWhitelist;
       const signal: SafetySignal = {
         termId: triple.term_id,
         lane: 'hard',
@@ -461,13 +462,12 @@ export async function getSafetyData(
             ? 'KEPT'
             : 'SUPPRESSED (author not in your trust circle or extended network)',
       });
-      // DEV-GATE-DISABLED (revert before prod): the soft lane is normally gated.
-      // 1-hop: an author in the trust circle. 2-hop (NEW): an extended-network
-      // author with ≥ MIN_BRIDGES distinct bridges (computed in buildAuthors).
-      // Both gates flip on together. Disabled during development so all soft
-      // tags surface regardless of authorship.
-      // Re-enable by uncommenting the line below.
-      // if (!authors.fromTrustCircle && !authors.fromExtendedNetwork) continue;
+      // The soft lane is gated. 1-hop: an author in the trust circle. 2-hop: an
+      // extended-network author with ≥ MIN_BRIDGES distinct bridges (computed in
+      // buildAuthors). Both gates flip on together.
+      if (!authors.fromTrustCircle && !authors.fromExtendedNetwork) {
+        continue;
+      }
 
       warnings.push({
         termId: triple.term_id,

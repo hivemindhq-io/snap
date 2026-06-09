@@ -7,7 +7,7 @@
     "url": "https://github.com/hivemindhq-io/snap"
   },
   "source": {
-    "shasum": "Vo9eks33IPD/qxpWXgBQof+n9F7HwOiOxb7HVztj9O0=",
+    "shasum": "3OwVAHQjmpiimoPXJkEDOD7IlIlMRi0uZRXRWlW/FlQ=",
     "location": {
       "npm": {
         "filePath": "dist/bundle.js",
@@ -23,10 +23,6 @@
     },
     "endowment:page-home": {},
     "endowment:network-access": {},
-    "endowment:rpc": {
-      "dapps": true,
-      "snaps": false
-    },
     "snap_manageState": {}
   },
   "manifestVersion": "0.1"
