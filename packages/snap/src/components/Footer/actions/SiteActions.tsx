@@ -8,7 +8,7 @@ import { FooterLink } from '../FooterLink';
  *
  * - {@link OriginType.NoAtom}: invite the user to be the first to add a claim
  *   about the site.
- * - {@link OriginType.HasAtom}: link out to see what others say about the site.
+ * - {@link OriginType.HasAtom}: prompt the user to weigh in on the site.
  * - {@link OriginType.NoOrigin}: nothing to link to (returns null).
  *
  * Self-gating: returns null when there is no actionable origin.
@@ -28,7 +28,7 @@ export const SiteAction = (props: OriginProps) => {
 
   if (props.originType === OriginType.HasAtom) {
     const { url } = vendor.viewOriginAtom(props);
-    return <FooterLink href={url} label="Site reputation" />;
+    return <FooterLink href={url} label="Weigh in on this site" />;
   }
 
   return null;

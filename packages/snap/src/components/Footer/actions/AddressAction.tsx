@@ -8,14 +8,14 @@ import { FooterLink } from '../FooterLink';
  *
  * Priority (highest to lowest):
  * - {@link AccountType.NoAtom}: invite the user to add the first claim.
- * - {@link AccountType.AtomWithoutTrustTriple}: prompt to vote on trust.
+ * - {@link AccountType.AtomWithoutTrustTriple}: prompt to weigh in.
  * - {@link AccountType.AtomWithTrustTriple} with no existing user position:
- *   prompt to vote on trust.
+ *   prompt to weigh in.
  * - {@link AccountType.AtomWithTrustTriple} where the user already has a
  *   position: fall back to a plain "see what others say" view link.
  *
- * Collapsing vote + view into a single link keeps the address subject to one
- * footer line.
+ * Collapsing weigh-in + view into a single link keeps the address subject to
+ * one footer line.
  *
  * @param props - Account props (type + address/atom/triple).
  * @returns A single footer link for the address, or null.
@@ -28,7 +28,7 @@ export const AddressAction = (props: AccountProps) => {
 
   if (props.accountType === AccountType.AtomWithoutTrustTriple) {
     const { url } = vendor.atomWithoutTrustTriple(props);
-    return <FooterLink href={url} label="Is this address trustworthy? Vote" />;
+    return <FooterLink href={url} label="Weigh in on this address" />;
   }
 
   // AtomWithTrustTriple: vote when the user has no position yet, otherwise view.
@@ -44,7 +44,7 @@ export const AddressAction = (props: AccountProps) => {
 
   if (!hasPosition) {
     const { url } = vendor.atomWithTrustTriple(props);
-    return <FooterLink href={url} label="Is this address trustworthy? Vote" />;
+    return <FooterLink href={url} label="Weigh in on this address" />;
   }
 
   const { url } = vendor.viewAtom(props);
