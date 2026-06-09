@@ -17,7 +17,7 @@ import type {
 } from './types';
 
 /** Cache TTL in milliseconds (1 hour) */
-const CACHE_TTL_MS = 60 * 60 * 1;
+const CACHE_TTL_MS = 60 * 60 * 1000;
 
 /**
  * Schema version for the cached trust-circle payload. Bump this whenever the
